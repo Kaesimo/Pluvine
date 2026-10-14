@@ -1,0 +1,66 @@
+[
+  {
+    "file": "rain_window.ogg / rain_window.mp3",
+    "name": "Rain against the window",
+    "artist": "cori",
+    "license": "Public Domain (CC0 equivalent)",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Rain_against_the_window.ogg",
+    "description": "Authentic audio of rain droplets pattering against a window pane."
+  },
+  {
+    "file": "rain_roof.ogg / rain_roof.mp3",
+    "name": "Rain on a veranda and thunder",
+    "artist": "ezwa",
+    "license": "Public Domain (CC0 equivalent)",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Rain_on_a_veranda_and_t.ogg",
+    "description": "Natural recording of rainfall drumming on a veranda and roof canopy."
+  },
+  {
+    "file": "rain_heavy.ogg / rain_heavy.mp3",
+    "name": "Heavy Rain in Summer",
+    "artist": "Fiver, der Hellseher",
+    "license": "Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Heavy_Rain_in_Summer.ogg",
+    "description": "Torrential summer precipitation and open-air downpour."
+  },
+  {
+    "file": "rain_soft.ogg / rain_soft.mp3",
+    "name": "Sound of light rainfall",
+    "artist": "Mijesty",
+    "license": "Creative Commons Attribution-ShareAlike 4.0 International (CC BY-SA 4.0)",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Sound_of_light_rainfall.ogg",
+    "description": "Delicate, soft rain mist and calming droplet textures."
+  },
+  {
+    "file": "rain_steady.ogg / rain_steady.mp3",
+    "name": "Sound of rain",
+    "artist": "Effib",
+    "license": "Creative Commons Attribution-ShareAlike 3.0 Unported (CC BY-SA 3.0)",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Sound_of_rain.ogg",
+    "description": "Continuous, steady rainfall ideal for cognitive focus and masking."
+  },
+  {
+    "file": "rain_thunder_storm.ogg / rain_thunder_storm.mp3",
+    "name": "Rain and thunder",
+    "artist": "Caesar",
+    "license": "Public Domain",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Rain_and_thunder.ogg",
+    "description": "Authentic nocturnal rainstorm with distant rolling thunder."
+  },
+  {
+    "file": "thunder_distant.ogg / thunder_distant.mp3",
+    "name": "Thunder",
+    "artist": "Bidgee",
+    "license": "Creative Commons Attribution 3.0 Unported (CC BY 3.0)",
+    "sourceUrl": "https://commons.wikimedia.org/wiki/File:Thunder.ogg",
+    "description": "Deep distant thunder strike recorded in Darwin, Northern Territory, Australia."
+  },
+  {
+    "file": "wind_breeze.ogg / wind_breeze.mp3",
+    "name": "Wind",
+    "artist": "BigSoundBank.com (Sound #0595)",
+    "license": "Creative Commons 0 (Public Domain)",
+    "sourceUrl": "https://bigsoundbank.com/detail-0595-wind.html",
+    "description": "Natural ambient wind breeze rustling through atmosphere."
+  }
+]
