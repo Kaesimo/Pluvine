@@ -13,7 +13,9 @@ packaging/pkg/
 
 # the user's original recordings — never committed (multi-GB; build the
 # runtime audio with `npm run sounds:sync`). The folder README stays tracked.
-/sounds/
+# (Ignore the contents, not the directory — a negation cannot re-include a
+# file whose parent directory itself is excluded.)
+/sounds/*
 !/sounds/README.md
 
 # runtime audio built from sounds/ (the two small thunder one-shots stay
