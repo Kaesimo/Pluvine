@@ -48,14 +48,14 @@ Two ways to install on Arch:
 
 ```bash
 # 1. self-contained package from electron-builder (bundles its own Chromium)
-sudo pacman -U release/pluvine-1.0.0.pacman
+sudo pacman -U release/pluvine-1.0.2.pacman
 
 # 2. Arch-native PKGBUILD: uses the SYSTEM electron package
 #    (pacman -S electron provides updates for every Electron app at once)
 cd packaging && makepkg -si
 ```
 
-The AppImage needs no installation: `chmod +x Pluvine-1.0.0.AppImage && ./Pluvine-1.0.0.AppImage`.
+The AppImage needs no installation: `chmod +x Pluvine-1.0.2.AppImage && ./Pluvine-1.0.2.AppImage`.
 
 To run the Electron checks against a packaged build:
 

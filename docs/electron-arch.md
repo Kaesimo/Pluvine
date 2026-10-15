@@ -74,8 +74,8 @@ window instead of opening a second one.
 
 ```bash
 npm run dist:linux
-# release/Pluvine-1.0.0.AppImage   (~179 MB)
-# release/pluvine-1.0.0.pacman     (~147 MB, bundles its own Chromium)
+# release/Pluvine-1.0.2.AppImage   (~179 MB)
+# release/pluvine-1.0.2.pacman     (~147 MB, bundles its own Chromium)
 #
 # Packaging builds run VITE_SOUND_EXT=mp3 + scripts/transcode-sounds.mjs:
 # all runtime audio is already Ogg Opus 96k (built by npm run sounds:sync
@@ -116,7 +116,7 @@ The AppImage is the third option: no installation, no integration.
 | `node verify.browser.mjs` | 68/68 web checks (unchanged web app) |
 | `node verify.electron.mjs` | 24/24 inside real Electron, incl. a **non-silent Web Audio proof** (`createMediaElementSource → AnalyserNode`, peak > 0) |
 | `PLUVINE_E2E_EXEC=release/linux-unpacked/pluvine node verify.electron.mjs` | 24/24 against the *packaged* binary (asar serving) |
-| `pacman -Qp release/pluvine-1.0.0.pacman` + `bsdtar -tf` | metadata, `StartupWMClass`, icon, `/opt/Pluvine/resources/app.asar` |
+| `pacman -Qp release/pluvine-1.0.2.pacman` + `bsdtar -tf` | metadata, `StartupWMClass`, icon, `/opt/Pluvine/resources/app.asar` |
 | extracted `AppRun --appimage-extract` run | serves from asar, index 200, audio 206 |
 | `cd packaging && makepkg -d` | Arch package builds; `depend = electron`; layout verified by running the extracted `/opt/pluvine` with an electron binary |
 | two concurrent instances | second exits 0 and hands focus over |

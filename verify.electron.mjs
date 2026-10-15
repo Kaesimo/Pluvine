@@ -74,7 +74,7 @@ check('title', (await page.title()).includes('Pluvine'));
 const winCount = await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows().length);
 check('exactly one window', winCount === 1, `got ${winCount}`);
 const version = await app.evaluate(({ app: a }) => a.getVersion());
-check('app version 1.0.0', version === '1.0.0', version);
+check('app version 1.0.2', version === '1.0.2', version);
 
 // ── playback ─────────────────────────────────────────────────────────────
 await page.click('.pl-play');

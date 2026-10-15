@@ -1,8 +1,8 @@
 {
   "name": "pluvine",
   "private": true,
-  "version": "1.0.0",
-  "description": "Ambient rain mixer: nine layered recordings, one window, no accounts",
+  "version": "1.0.2",
+  "description": "Ambient rain mixer: ten layered recordings, one window, no accounts",
   "author": {
     "name": "Kaesimo",
     "email": "kaesimo@localhost"
