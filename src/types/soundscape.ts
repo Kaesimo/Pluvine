@@ -1,184 +1,242 @@
-import { SoundMixerState, RainEnvironment } from '../utils/soundEngine';
+/**
+ * Pluvine — sound layer and preset definitions.
+ *
+ * A layer is one continuous sound source in the mixer. `playbackMode` is the
+ * only scheduling hint the engine needs:
+ *   - 'loop'         → one continuously running voice (rain, wind, hum)
+ *   - 'intermittent' → no continuous voice; the engine schedules isolated
+ *                      strikes for these layers (thunder).
+ *
+ * Presets are plain layer-state maps: enabling/disabling a layer and its
+ * volume. They contain no copy beyond a short literal name.
+ */
 
-export interface Soundscape {
+export type PlaybackMode = 'loop' | 'intermittent';
+
+export interface SoundLayerConfig {
   id: string;
   name: string;
-  tagline: string;
-  description: string;
-  acousticSurface: string;
-  recordingSource: string;
-  imagePath: string;
-  defaultTimerMinutes: number;
-  mixer: SoundMixerState;
+  enabled: boolean;
+  /** 0..1 */
+  volume: number;
+  playbackMode: PlaybackMode;
 }
 
-export const SOUNDSCAPES: Soundscape[] = [
+export type LayerStates = Record<string, { enabled: boolean; volume: number }>;
+
+export interface Preset {
+  id: string;
+  name: string;
+  isCustom?: boolean;
+  layerStates: LayerStates;
+}
+
+/** Default mixer configuration: light rain + distant thunder. */
+export const DEFAULT_SOUND_LAYERS: SoundLayerConfig[] = [
   {
-    id: 'window-rain',
-    name: 'Rain Against the Window',
-    tagline: 'Gentle droplets tapping glass',
-    description: 'Delicate, intimate rainfall trickling and pattering against a dark bedroom windowpane.',
-    acousticSurface: 'Window Glass',
-    recordingSource: 'Field recording by cori (Public Domain)',
-    imagePath: '/src/assets/images/rain_window_nocturne_1791957608774.jpg',
-    defaultTimerMinutes: 60,
-    mixer: {
-      masterVolume: 0.85,
-      rainEnabled: true,
-      rainVolume: 0.90,
-      rainEnvironment: 'window',
-      thunderEnabled: false,
-      thunderVolume: 0.0,
-      thunderFrequency: 'off',
-      windEnabled: false,
-      windVolume: 0.0,
-      fireEnabled: false,
-      fireVolume: 0.0,
-      binauralEnabled: false,
-      binauralVolume: 0.0,
-      binauralBand: 'off',
-      droneEnabled: false,
-      ambientDroneVolume: 0.0,
+    id: 'rain-light-loop',
+    name: 'Light rain',
+    enabled: true,
+    volume: 0.85,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'rain-window-patter',
+    name: 'Window rain',
+    enabled: false,
+    volume: 0.5,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'rain-forest-loop',
+    name: 'Forest rain',
+    enabled: false,
+    volume: 0.8,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'rain-car-glass',
+    name: 'Car rain',
+    enabled: false,
+    volume: 0.85,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'rain-ambient-gentle',
+    name: 'Steady rain',
+    enabled: false,
+    volume: 0.8,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'rain-heavy-loop',
+    name: 'Heavy rain',
+    enabled: false,
+    volume: 0.85,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'wind-blowing-ambience',
+    name: 'Wind',
+    enabled: false,
+    volume: 0.35,
+    playbackMode: 'loop',
+  },
+  {
+    id: 'thunder-distant-rumble',
+    name: 'Distant thunder',
+    enabled: true,
+    volume: 0.4,
+    playbackMode: 'intermittent',
+  },
+  {
+    id: 'thunder-big-rumble',
+    name: 'Heavy thunder',
+    enabled: false,
+    volume: 0.55,
+    playbackMode: 'intermittent',
+  },
+  {
+    id: 'mechanical-air-conditioner',
+    name: 'AC hum',
+    enabled: false,
+    volume: 0.35,
+    playbackMode: 'loop',
+  },
+];
+
+/**
+ * Starter presets. Ids are stable (stored custom presets reference them).
+ *
+ * Disabled layers keep their nominal level rather than 0: switching a layer
+ * on from a preset always produces sound at a sensible level, and the live mix
+ * compares cleanly against the preset it came from.
+ */
+export const DEFAULT_PRESETS: Preset[] = [
+  {
+    id: 'preset-gentle-sleep',
+    name: 'Gentle rain',
+    layerStates: {
+      'rain-light-loop': { enabled: true, volume: 0.85 },
+      'rain-window-patter': { enabled: true, volume: 0.45 },
+      'rain-forest-loop': { enabled: false, volume: 0.8 },
+      'rain-car-glass': { enabled: false, volume: 0.85 },
+      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
+      'rain-heavy-loop': { enabled: false, volume: 0.85 },
+      'wind-blowing-ambience': { enabled: false, volume: 0.35 },
+      'thunder-distant-rumble': { enabled: true, volume: 0.35 },
+      'thunder-big-rumble': { enabled: false, volume: 0.55 },
+      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
     },
   },
   {
-    id: 'roof-rain',
-    name: 'Cabin Roof & Hearth',
-    tagline: 'Heavy roof patter with fireside embers',
-    description: 'Deep rhythmic rainfall drumming on a timber veranda and cedar roof, with warm embers crackling nearby.',
-    acousticSurface: 'Timber Veranda & Roof',
-    recordingSource: 'Field recording by ezwa (Public Domain)',
-    imagePath: '/src/assets/images/cabin_rain_forest_1791957627473.jpg',
-    defaultTimerMinutes: 60,
-    mixer: {
-      masterVolume: 0.85,
-      rainEnabled: true,
-      rainVolume: 0.92,
-      rainEnvironment: 'roof',
-      thunderEnabled: true,
-      thunderVolume: 0.35,
-      thunderFrequency: 'rare',
-      windEnabled: false,
-      windVolume: 0.0,
-      fireEnabled: true,
-      fireVolume: 0.22,
-      binauralEnabled: false,
-      binauralVolume: 0.0,
-      binauralBand: 'off',
-      droneEnabled: false,
-      ambientDroneVolume: 0.0,
+    id: 'preset-deep-storm',
+    name: 'Night storm',
+    layerStates: {
+      'rain-light-loop': { enabled: false, volume: 0.85 },
+      'rain-window-patter': { enabled: false, volume: 0.5 },
+      'rain-forest-loop': { enabled: false, volume: 0.7 },
+      'rain-car-glass': { enabled: true, volume: 0.6 },
+      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
+      'rain-heavy-loop': { enabled: false, volume: 0.85 },
+      'wind-blowing-ambience': { enabled: true, volume: 0.35 },
+      'thunder-distant-rumble': { enabled: true, volume: 0.5 },
+      'thunder-big-rumble': { enabled: true, volume: 0.5 },
+      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
     },
   },
   {
-    id: 'distant-thunder',
-    name: 'Distant Horizon Storm',
-    tagline: 'Nocturnal rain with rolling thunder',
-    description: 'Atmospheric mountain rainstorm accompanied by deep rolling thunder echoing across distant ridgelines.',
-    acousticSurface: 'Mountain Overlook',
-    recordingSource: 'Field recording by Caesar & Bidgee (Public Domain / CC BY 3.0)',
-    imagePath: '/src/assets/images/mountain_storm_night_1791957645253.jpg',
-    defaultTimerMinutes: 60,
-    mixer: {
-      masterVolume: 0.85,
-      rainEnabled: true,
-      rainVolume: 0.90,
-      rainEnvironment: 'storm',
-      thunderEnabled: true,
-      thunderVolume: 0.48,
-      thunderFrequency: 'occasional',
-      windEnabled: true,
-      windVolume: 0.16,
-      fireEnabled: false,
-      fireVolume: 0.0,
-      binauralEnabled: false,
-      binauralVolume: 0.0,
-      binauralBand: 'off',
-      droneEnabled: false,
-      ambientDroneVolume: 0.0,
+    id: 'preset-deep-focus',
+    name: 'Rain and hum',
+    layerStates: {
+      'rain-light-loop': { enabled: false, volume: 0.85 },
+      'rain-window-patter': { enabled: false, volume: 0.5 },
+      'rain-forest-loop': { enabled: false, volume: 0.8 },
+      'rain-car-glass': { enabled: false, volume: 0.85 },
+      'rain-ambient-gentle': { enabled: true, volume: 0.8 },
+      'rain-heavy-loop': { enabled: false, volume: 0.85 },
+      'wind-blowing-ambience': { enabled: false, volume: 0.35 },
+      'thunder-distant-rumble': { enabled: false, volume: 0.4 },
+      'thunder-big-rumble': { enabled: false, volume: 0.55 },
+      'mechanical-air-conditioner': { enabled: true, volume: 0.4 },
     },
   },
   {
-    id: 'steady-study',
-    name: 'Steady Concentration Rain',
-    tagline: 'Uniform masking rainfall for flow state',
-    description: 'Continuous, balanced rainfall engineered to absorb background distractions and maintain deep focus.',
-    acousticSurface: 'Continuous Open Rain',
-    recordingSource: 'Field recording by Effib (CC BY-SA 3.0)',
-    imagePath: '/src/assets/images/library_study_rain_1791957664584.jpg',
-    defaultTimerMinutes: 45,
-    mixer: {
-      masterVolume: 0.80,
-      rainEnabled: true,
-      rainVolume: 0.95,
-      rainEnvironment: 'steady',
-      thunderEnabled: false,
-      thunderVolume: 0.0,
-      thunderFrequency: 'off',
-      windEnabled: false,
-      windVolume: 0.0,
-      fireEnabled: false,
-      fireVolume: 0.0,
-      binauralEnabled: false,
-      binauralVolume: 0.0,
-      binauralBand: 'off',
-      droneEnabled: false,
-      ambientDroneVolume: 0.0,
+    id: 'preset-cabin-window',
+    name: 'Window and wind',
+    layerStates: {
+      'rain-light-loop': { enabled: true, volume: 0.4 },
+      'rain-window-patter': { enabled: true, volume: 0.85 },
+      'rain-forest-loop': { enabled: false, volume: 0.8 },
+      'rain-car-glass': { enabled: false, volume: 0.85 },
+      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
+      'rain-heavy-loop': { enabled: false, volume: 0.85 },
+      'wind-blowing-ambience': { enabled: true, volume: 0.3 },
+      'thunder-distant-rumble': { enabled: false, volume: 0.4 },
+      'thunder-big-rumble': { enabled: false, volume: 0.55 },
+      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
     },
   },
   {
-    id: 'forest-mist',
-    name: 'Forest Canopy Mist',
-    tagline: 'Soft drizzle through evergreen pines',
-    description: 'Gentle, misty precipitation filtering softly through conifer needles, leaves, and wet forest earth.',
-    acousticSurface: 'Pine Needle Canopy',
-    recordingSource: 'Field recording by Mijesty (CC BY-SA 4.0)',
-    imagePath: '/src/assets/images/cabin_rain_forest_1791957627473.jpg',
-    defaultTimerMinutes: 60,
-    mixer: {
-      masterVolume: 0.80,
-      rainEnabled: true,
-      rainVolume: 0.88,
-      rainEnvironment: 'soft',
-      thunderEnabled: false,
-      thunderVolume: 0.0,
-      thunderFrequency: 'off',
-      windEnabled: true,
-      windVolume: 0.12,
-      fireEnabled: false,
-      fireVolume: 0.0,
-      binauralEnabled: false,
-      binauralVolume: 0.0,
-      binauralBand: 'off',
-      droneEnabled: false,
-      ambientDroneVolume: 0.0,
+    id: 'preset-car-shelter',
+    name: 'Car rain',
+    layerStates: {
+      'rain-light-loop': { enabled: false, volume: 0.85 },
+      'rain-window-patter': { enabled: false, volume: 0.5 },
+      'rain-forest-loop': { enabled: false, volume: 0.8 },
+      'rain-car-glass': { enabled: true, volume: 0.9 },
+      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
+      'rain-heavy-loop': { enabled: false, volume: 0.85 },
+      'wind-blowing-ambience': { enabled: true, volume: 0.2 },
+      'thunder-distant-rumble': { enabled: true, volume: 0.3 },
+      'thunder-big-rumble': { enabled: false, volume: 0.55 },
+      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
     },
   },
   {
-    id: 'outdoor-downpour',
-    name: 'Torrential Summer Downpour',
-    tagline: 'Heavy open-air cloudburst and gusts',
-    description: 'A vigorous summer downpour drumming across open ground, accompanied by cooling natural wind gusts.',
-    acousticSurface: 'Open Earth & Sky',
-    recordingSource: 'Field recording by Fiver, der Hellseher (CC BY-SA 3.0)',
-    imagePath: '/src/assets/images/rain_window_nocturne_1791957608774.jpg',
-    defaultTimerMinutes: 60,
-    mixer: {
-      masterVolume: 0.85,
-      rainEnabled: true,
-      rainVolume: 0.95,
-      rainEnvironment: 'heavy',
-      thunderEnabled: true,
-      thunderVolume: 0.38,
-      thunderFrequency: 'occasional',
-      windEnabled: true,
-      windVolume: 0.20,
-      fireEnabled: false,
-      fireVolume: 0.0,
-      binauralEnabled: false,
-      binauralVolume: 0.0,
-      binauralBand: 'off',
-      droneEnabled: false,
-      ambientDroneVolume: 0.0,
+    id: 'preset-forest-sanctuary',
+    name: 'Forest rain',
+    layerStates: {
+      'rain-light-loop': { enabled: false, volume: 0.85 },
+      'rain-window-patter': { enabled: false, volume: 0.5 },
+      'rain-forest-loop': { enabled: true, volume: 0.85 },
+      'rain-car-glass': { enabled: false, volume: 0.85 },
+      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
+      'rain-heavy-loop': { enabled: false, volume: 0.85 },
+      'wind-blowing-ambience': { enabled: true, volume: 0.25 },
+      'thunder-distant-rumble': { enabled: true, volume: 0.25 },
+      'thunder-big-rumble': { enabled: false, volume: 0.55 },
+      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
     },
   },
 ];
+
+/** True when a layer list exactly matches a preset's states. */
+export function mixMatchesPreset(
+  layers: SoundLayerConfig[],
+  states: LayerStates
+): boolean {
+  return layers.every((layer) => {
+    const want = states[layer.id];
+    if (!want) return !layer.enabled;
+    return (
+      layer.enabled === want.enabled &&
+      Math.abs(layer.volume - clamp01(want.volume)) < 0.001
+    );
+  });
+}
+
+/** Snapshot the current mixer as a layer-state map (for saving presets). */
+export function snapshotMix(layers: SoundLayerConfig[]): LayerStates {
+  const states: LayerStates = {};
+  for (const layer of layers) {
+    states[layer.id] = { enabled: layer.enabled, volume: layer.volume };
+  }
+  return states;
+}
+
+function clamp01(v: number): number {
+  return typeof v === 'number' && Number.isFinite(v)
+    ? Math.max(0, Math.min(1, v))
+    : 0;
+}

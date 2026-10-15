@@ -1,486 +1,362 @@
 /**
- * Rainfocus — Rain-First Ambient Listening Experience
- * 
- * Rebuilt for immediate, high-fidelity listening:
- * - Authentic, licensed nature recordings (Window, Roof, Downpour, Forest Mist, Steady Rain, Distant Thunder)
- * - Seamless dual-buffer crossfaded looping with zero seams or dropouts
- * - Single-purpose, consolidated UI: zero duplicate play buttons, zero redundant text
- * - Discoverable acoustic balance mixer
- * - Minimalist OLED bedtime nightstand mode
+ * Pluvine — ambient rain mixer.
+ *
+ * One screen: transport (play + master), the layer mixer, presets, and a
+ * sleep timer in the header. All audio state flows one way — the engine owns
+ * it, this component mirrors it through engine callbacks and renders controls
+ * that only ever call intent-level engine methods.
  */
 
-import React, { useState, useEffect } from 'react';
-import { 
-  Play, 
-  Pause, 
-  Moon, 
-  Zap, 
-  Wind, 
-  SlidersHorizontal,
-  ShieldCheck
-} from 'lucide-react';
-import { soundEngine, SoundMixerState, DEFAULT_MIXER } from './utils/soundEngine';
-import { SOUNDSCAPES, Soundscape } from './types/soundscape';
-import { AtmosphericCanvas } from './components/AtmosphericCanvas';
-import { SoundscapeCard } from './components/SoundscapeCard';
-import { PersistentPlayer } from './components/PersistentPlayer';
-import { SoundscapeLayersPanel } from './components/SoundscapeLayersPanel';
-import { TimerModal } from './components/TimerModal';
-import { OledBedtimeView } from './components/OledBedtimeView';
-import { AttributionModal } from './components/AttributionModal';
+import { useCallback, useEffect, useMemo, useState } from 'react';
+import { soundEngine, type AssetFailure, type PlaybackState } from './utils/soundEngine';
+import {
+  DEFAULT_PRESETS,
+  type Preset,
+  type SoundLayerConfig,
+  mixMatchesPreset,
+  snapshotMix,
+} from './types/soundscape';
+import {
+  loadCustomPresets,
+  loadKeepTimerVisible,
+  loadMasterVolume,
+  saveCustomPresets,
+  saveKeepTimerVisible,
+  saveMasterVolume,
+} from './utils/presets';
+import { RainField, type LightningFlash } from './components/RainField';
+import { Transport } from './components/Transport';
+import { Mixer } from './components/Mixer';
+import { PresetBar } from './components/PresetBar';
+import { SleepTimer } from './components/SleepTimer';
+import { SaveMixDialog } from './components/SaveMixDialog';
+import { IconMark } from './components/icons';
+
+/** Idle time before the chrome drifts back out during sleep mode. */
+const SLEEP_UI_IDLE_MS = 3500;
 
 export default function App() {
-  // Playback & Soundscape State
-  const [currentSoundscape, setCurrentSoundscape] = useState<Soundscape>(SOUNDSCAPES[0]);
-  const [isPlaying, setIsPlaying] = useState<boolean>(false);
-  const [masterVolume, setMasterVolume] = useState<number>(0.85);
-  const [mixer, setMixer] = useState<SoundMixerState>({
-    ...DEFAULT_MIXER,
-    ...SOUNDSCAPES[0].mixer,
-  });
-  const [lightningFlash, setLightningFlash] = useState<number>(0);
+  // --- mirrored engine state ------------------------------------------------
+  const [playbackState, setPlaybackState] = useState<PlaybackState>(
+    soundEngine.getState()
+  );
+  const [layers, setLayers] = useState<SoundLayerConfig[]>(soundEngine.getLayers());
+  const [masterVolume, setMasterVolume] = useState<number>(
+    soundEngine.getMasterVolume()
+  );
+  const [sleepRemaining, setSleepRemaining] = useState<number>(0);
+  const [uiAwake, setUiAwake] = useState(true);
+  const [rainOnly, setRainOnly] = useState(false);
+  const [rainOnlyAwake, setRainOnlyAwake] = useState(true);
+  const [keepTimerVisible, setKeepTimerVisible] = useState(() =>
+    loadKeepTimerVisible(true)
+  );
+  const [assetFailures, setAssetFailures] = useState<AssetFailure[]>([]);
+  const [flash, setFlash] = useState<LightningFlash>({ seq: 0, intensity: 0 });
 
-  // Modals & Panels
-  const [isMixerOpen, setIsMixerOpen] = useState<boolean>(false);
-  const [isTimerOpen, setIsTimerOpen] = useState<boolean>(false);
-  const [isOledBedtimeOpen, setIsOledBedtimeOpen] = useState<boolean>(false);
-  const [isAttributionOpen, setIsAttributionOpen] = useState<boolean>(false);
+  // --- presets --------------------------------------------------------------
+  const [presets, setPresets] = useState<Preset[]>(() => [
+    ...DEFAULT_PRESETS,
+    ...loadCustomPresets(),
+  ]);
+  const [activePresetId, setActivePresetId] = useState<string | null>(
+    DEFAULT_PRESETS[0].id
+  );
+  const [saveDialogOpen, setSaveDialogOpen] = useState(false);
 
-  // Sleep Timer State
-  const [timerIsActive, setTimerIsActive] = useState<boolean>(false);
-  const [timerTotalMinutes, setTimerTotalMinutes] = useState<number>(60);
-  const [timerRemainingSeconds, setTimerRemainingSeconds] = useState<number>(60 * 60);
-  const [timerFadeSeconds, setTimerFadeSeconds] = useState<number>(0);
-  const [isContinuous, setIsContinuous] = useState<boolean>(false);
-
-  // Audio Engine Lifecycle
+  // --- engine wiring --------------------------------------------------------
   useEffect(() => {
-    soundEngine.setOnStateChange((playing) => {
-      setIsPlaying(playing);
-    });
+    soundEngine.setOnStateChange(setPlaybackState);
+    soundEngine.setOnLayersUpdated(setLayers);
+    soundEngine.setOnSleepTimerChange(setSleepRemaining);
+    soundEngine.setOnAssetStatusesChange(() =>
+      setAssetFailures(soundEngine.getAssetFailures())
+    );
+    soundEngine.setOnThunderStrike((intensity) =>
+      setFlash((prev) => ({ seq: prev.seq + 1, intensity }))
+    );
 
-    soundEngine.setOnThunderStrike((intensity) => {
-      setLightningFlash(intensity);
-      setTimeout(() => setLightningFlash(0), 140);
-    });
+    // Restored settings (session start only).
+    const persistedVolume = loadMasterVolume(soundEngine.getMasterVolume());
+    soundEngine.setMasterVolume(persistedVolume);
+    setMasterVolume(persistedVolume);
+    soundEngine.applyPreset(DEFAULT_PRESETS[0].layerStates);
+    setAssetFailures(soundEngine.getAssetFailures());
+
+    return () => {
+      soundEngine.setOnStateChange(() => {});
+      soundEngine.setOnLayersUpdated(() => {});
+      soundEngine.setOnSleepTimerChange(() => {});
+      soundEngine.setOnAssetStatusesChange(() => {});
+      soundEngine.setOnThunderStrike(() => {});
+    };
   }, []);
 
-  // Sleep Timer Countdown Tick
+  // --- derived view state ---------------------------------------------------
+  const activePreset = useMemo(
+    () => presets.find((p) => p.id === activePresetId),
+    [presets, activePresetId]
+  );
+  const edited =
+    !activePreset || !mixMatchesPreset(layers, activePreset.layerStates);
+  const mixName = activePreset && !edited ? activePreset.name : 'Custom mix';
+  const isPlaying = playbackState === 'playing' || playbackState === 'starting';
+
+  // --- sleep mode: chrome fades to the rain, the timer stays ------------------
+  // While the timer runs, the interface quietly leaves the screen. Any pointer
+  // or key activity brings it back immediately; it drifts out again after a
+  // short idle. The timer button itself never fades (it is the countdown).
+  const sleepMode = sleepRemaining > 0;
   useEffect(() => {
-    if (!timerIsActive) return;
-
-    const interval = setInterval(() => {
-      setTimerRemainingSeconds((current) => {
-        if (current <= 1) {
-          soundEngine.setFadeFactor(0.0);
-          soundEngine.pause();
-          setTimerIsActive(false);
-          return 0;
-        }
-
-        const next = current - 1;
-
-        if (timerFadeSeconds > 0 && next <= timerFadeSeconds) {
-          const factor = next / timerFadeSeconds;
-          soundEngine.setFadeFactor(factor);
-        } else {
-          soundEngine.setFadeFactor(1.0);
-        }
-
-        return next;
-      });
-    }, 1000);
-
-    return () => clearInterval(interval);
-  }, [timerIsActive, timerFadeSeconds]);
-
-  // Master Play / Pause
-  const handleTogglePlay = () => {
-    if (isPlaying) {
-      soundEngine.pause();
-    } else {
-      soundEngine.play();
+    // In rain-only mode the chrome stays hidden even on pointer activity —
+    // only the Rain-only button wakes (its own effect below).
+    if (!sleepMode || rainOnly) {
+      setUiAwake(true);
+      return;
     }
-  };
-
-  // Immediate Soundscape Selection
-  const handleSelectSoundscape = (soundscape: Soundscape) => {
-    setCurrentSoundscape(soundscape);
-
-    const newMixer: SoundMixerState = {
-      ...DEFAULT_MIXER,
-      ...soundscape.mixer,
-      masterVolume,
+    let idle: ReturnType<typeof setTimeout>;
+    const wake = () => {
+      setUiAwake(true);
+      clearTimeout(idle);
+      idle = setTimeout(() => setUiAwake(false), SLEEP_UI_IDLE_MS);
     };
-    setMixer(newMixer);
-    soundEngine.crossfadeTo(newMixer, 0.8);
-
-    if (!isPlaying) {
-      soundEngine.play();
-    }
-  };
-
-  // Master Volume Change
-  const handleVolumeChange = (vol: number) => {
-    setMasterVolume(vol);
-    setMixer((prev) => ({ ...prev, masterVolume: vol }));
-    soundEngine.updateMixer({ masterVolume: vol });
-  };
-
-  // Granular Mixer Updates
-  const handleUpdateMixer = (updates: Partial<SoundMixerState>) => {
-    const updated = { ...mixer, ...updates };
-    setMixer(updated);
-    soundEngine.updateMixer(updates);
-  };
-
-  // Reset to Current Soundscape Defaults
-  const handleResetDefaults = () => {
-    const defaults: SoundMixerState = {
-      ...DEFAULT_MIXER,
-      ...currentSoundscape.mixer,
-      masterVolume,
+    idle = setTimeout(() => setUiAwake(false), SLEEP_UI_IDLE_MS);
+    window.addEventListener('pointermove', wake);
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', wake);
+    window.addEventListener('focusin', wake);
+    return () => {
+      clearTimeout(idle);
+      window.removeEventListener('pointermove', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', wake);
+      window.removeEventListener('focusin', wake);
     };
-    setMixer(defaults);
-    soundEngine.crossfadeTo(defaults, 0.6);
-  };
+  }, [sleepMode, rainOnly]);
 
-  // Manual Thunderstrike
-  const handleTriggerThunder = () => {
-    if (!isPlaying) {
-      soundEngine.play();
+  // Rain-only mode: the whole interface (including the sleep timer) is gone;
+  // only the Rain-only button itself wakes on pointer/key activity so you can
+  // find it and click it again. Escape also exits.
+  useEffect(() => {
+    if (!rainOnly) {
+      setRainOnlyAwake(true);
+      return;
     }
-    soundEngine.triggerThunder(0.85);
-  };
+    let idle: ReturnType<typeof setTimeout>;
+    const wake = () => {
+      setRainOnlyAwake(true);
+      clearTimeout(idle);
+      idle = setTimeout(() => setRainOnlyAwake(false), SLEEP_UI_IDLE_MS);
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        setRainOnly(false);
+        return;
+      }
+      wake();
+    };
+    idle = setTimeout(() => setRainOnlyAwake(false), SLEEP_UI_IDLE_MS);
+    window.addEventListener('pointermove', wake);
+    window.addEventListener('pointerdown', wake);
+    window.addEventListener('keydown', onKey);
+    window.addEventListener('focusin', wake);
+    return () => {
+      clearTimeout(idle);
+      window.removeEventListener('pointermove', wake);
+      window.removeEventListener('pointerdown', wake);
+      window.removeEventListener('keydown', onKey);
+      window.removeEventListener('focusin', wake);
+    };
+  }, [rainOnly]);
 
-  // Timer Controls
-  const handleStartTimer = (mins: number, fadeSecs: number) => {
-    const secs = mins * 60;
-    setTimerTotalMinutes(mins);
-    setTimerFadeSeconds(fadeSecs);
-    setTimerRemainingSeconds(secs);
-    setTimerIsActive(true);
-    setIsContinuous(false);
-    soundEngine.setFadeFactor(1.0);
+  // --- handlers -------------------------------------------------------------
+  const handleTogglePlayback = useCallback(() => {
+    if (isPlaying) soundEngine.pause();
+    else void soundEngine.play();
+  }, [isPlaying]);
 
-    if (!isPlaying) {
-      soundEngine.play();
-    }
-    setIsTimerOpen(false);
-  };
+  const handleToggleLayer = useCallback((layerId: string, enabled: boolean) => {
+    soundEngine.setLayerEnabled(layerId, enabled);
+  }, []);
 
-  const handleCancelTimer = () => {
-    setTimerIsActive(false);
-    setIsContinuous(false);
-    soundEngine.setFadeFactor(1.0);
-  };
+  const handleLayerVolume = useCallback((layerId: string, volume: number) => {
+    soundEngine.setLayerVolume(layerId, volume);
+  }, []);
 
-  const handleAddTime = (mins: number) => {
-    setTimerRemainingSeconds((prev) => prev + mins * 60);
-    soundEngine.setFadeFactor(1.0);
-  };
+  const handleMasterVolume = useCallback((volume: number) => {
+    soundEngine.setMasterVolume(volume);
+    setMasterVolume(volume);
+    saveMasterVolume(volume);
+  }, []);
 
-  const handleEnableContinuous = () => {
-    setTimerIsActive(false);
-    setIsContinuous(true);
-    soundEngine.setFadeFactor(1.0);
-    if (!isPlaying) {
-      soundEngine.play();
-    }
-    setIsTimerOpen(false);
-  };
+  const handleSelectPreset = useCallback(
+    (presetId: string) => {
+      const preset = presets.find((p) => p.id === presetId);
+      if (!preset) return;
+      soundEngine.applyPreset(preset.layerStates);
+      setActivePresetId(presetId);
+      // Choosing a preset is an explicit wish to hear it.
+      if (playbackState !== 'playing' && playbackState !== 'starting') {
+        void soundEngine.play();
+      }
+    },
+    [presets, playbackState]
+  );
 
-  const formatRemainingTimer = () => {
-    if (!timerIsActive) return null;
-    const mins = Math.floor(timerRemainingSeconds / 60);
-    const secs = timerRemainingSeconds % 60;
-    return `${mins}:${secs.toString().padStart(2, '0')}`;
-  };
+  const handleDeletePreset = useCallback(
+    (presetId: string) => {
+      const next = presets.filter((p) => p.id !== presetId);
+      setPresets(next);
+      saveCustomPresets(next);
+      if (activePresetId === presetId) setActivePresetId(null);
+    },
+    [presets, activePresetId]
+  );
+
+  const handleSaveMix = useCallback(
+    (name: string) => {
+      const states = snapshotMix(layers);
+      const normalizedName = name.toLowerCase();
+
+      // Same name (case-insensitive) updates that mix in place.
+      const existingCustom = presets.find(
+        (p) => p.isCustom && p.name.toLowerCase() === normalizedName
+      );
+      const saved: Preset = existingCustom
+        ? { ...existingCustom, layerStates: states }
+        : { id: `custom-${Date.now()}`, name, isCustom: true, layerStates: states };
+
+      const next = existingCustom
+        ? presets.map((p) => (p.id === existingCustom.id ? saved : p))
+        : [...presets, saved];
+
+      setPresets(next);
+      saveCustomPresets(next);
+      setActivePresetId(saved.id);
+      setSaveDialogOpen(false);
+    },
+    [layers, presets]
+  );
+
+  const handleStartTimer = useCallback((minutes: number) => {
+    soundEngine.startSleepTimer(minutes * 60);
+  }, []);
+
+  const handleAddTimerTime = useCallback((minutes: number) => {
+    soundEngine.addSleepTimerTime(minutes * 60);
+  }, []);
+
+  const handleCancelTimer = useCallback(() => {
+    soundEngine.cancelSleepTimer();
+  }, []);
+
+  const handleToggleKeepTimer = useCallback((value: boolean) => {
+    setKeepTimerVisible(value);
+    saveKeepTimerVisible(value);
+  }, []);
+
+  // --- honest failure notice -------------------------------------------------
+  const failureNotice = useMemo(() => {
+    if (assetFailures.length === 0) return null;
+    const names = assetFailures
+      .map((f) => layers.find((l) => l.id === f.layerId)?.name ?? f.layerId)
+      .slice(0, 3);
+    const extra = assetFailures.length - names.length;
+    const list = names.join(', ') + (extra > 0 ? ` +${extra}` : '');
+    return `${list}: recording unavailable, built-in sound in use.`;
+  }, [assetFailures, layers]);
 
   return (
-    <div className="min-h-screen bg-[#06080e] text-slate-100 flex flex-col justify-between selection:bg-slate-700 relative overflow-x-hidden font-sans">
-      {/* Animated Multi-Plane Night Rain Canvas */}
-      <AtmosphericCanvas
-        isPlaying={isPlaying}
-        lightningFlash={lightningFlash}
-        rainType={mixer.rainEnvironment === 'roof' ? 'heavy' : mixer.rainEnvironment === 'steady' ? 'medium' : mixer.rainEnvironment === 'storm' ? 'heavy' : mixer.rainEnvironment}
-        rainIntensity={mixer.rainEnabled ? mixer.rainVolume : 0.3}
-      />
+    <div
+      className={[
+        'relative min-h-dvh',
+        rainOnly ? 'is-rainonly' : '',
+        rainOnly && !rainOnlyAwake ? 'is-rainonly-idle' : '',
+        !rainOnly && sleepMode && !uiAwake ? 'is-sleeping' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
+    >
+      <RainField playing={isPlaying} flash={flash} />
 
-      {/* Main Container */}
-      <div className="relative z-10 w-full max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 pt-5 pb-36">
-        {/* Top Header: Uncluttered wordmark + essential secondary triggers */}
-        <header className="flex items-center justify-between pb-5 mb-8 border-b border-slate-800/80">
-          <a
-            href="/"
-            className="text-lg font-bold tracking-tight text-white hover:text-slate-200 transition-colors"
-          >
-            Rainfocus
-          </a>
+      <div className="relative z-10 flex min-h-dvh flex-col">
+        <header className="mx-auto flex h-16 w-full max-w-[880px] items-center justify-between gap-4 px-4 sm:px-5">
+          <div className="pl-ui flex items-center gap-2.5 text-rain">
+            <IconMark />
+            <span className="text-[17px] font-semibold tracking-tight text-text">
+              Pluvine
+            </span>
+          </div>
 
           <div className="flex items-center gap-2.5">
-            <button
-              onClick={() => setIsAttributionOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-400 hover:text-slate-200 transition-colors cursor-pointer"
-              title="View recording sources and licenses"
-            >
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-              <span className="hidden sm:inline">Licenses</span>
-            </button>
+            <SleepTimer
+              className={`pl-timerband ${keepTimerVisible ? '' : 'pl-ui'}`}
+              keepVisible={keepTimerVisible}
+              onToggleKeepVisible={handleToggleKeepTimer}
+              remaining={sleepRemaining}
+              onStart={handleStartTimer}
+              onAdd={handleAddTimerTime}
+              onCancel={handleCancelTimer}
+            />
 
+            {/* Outside .pl-ui: in rain-only mode this is the one thing that
+                wakes on pointer activity, so you can always find and click it. */}
             <button
-              onClick={() => setIsOledBedtimeOpen(true)}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-900 hover:bg-slate-800 border border-slate-800 text-xs text-slate-300 hover:text-white transition-colors cursor-pointer"
-              title="Open dark bedside clock"
+              type="button"
+              className={[
+                'pl-btn pl-rainonly',
+                rainOnly ? 'is-active' : '',
+                rainOnly && rainOnlyAwake ? 'is-awake' : '',
+              ]
+                .filter(Boolean)
+                .join(' ')}
+              aria-pressed={rainOnly}
+              aria-label={rainOnly ? 'Exit rain-only mode' : 'Show rain only'}
+              onClick={() => setRainOnly(!rainOnly)}
             >
-              <Moon className="w-3.5 h-3.5 text-amber-400" />
-              <span>Bedside Mode</span>
+              Rain only
             </button>
           </div>
         </header>
 
-        {/* Hero Atmosphere Stage (Focused centerpiece without redundant buttons) */}
-        <section
-          aria-label="Current atmosphere"
-          className="relative rounded-3xl overflow-hidden border border-slate-800 mb-10 shadow-2xl bg-slate-950"
-        >
-          {/* Backdrop Image with Scrim */}
-          <div className="absolute inset-0 z-0">
-            <img
-              src={currentSoundscape.imagePath}
-              alt={currentSoundscape.name}
-              referrerPolicy="no-referrer"
-              className="w-full h-full object-cover opacity-40 scale-105 transition-all duration-700"
+        <main className="pl-ui flex flex-1 px-4 pb-8 sm:px-5">
+          <div className="pl-plate m-auto w-full max-w-[880px]">
+            <Transport
+              state={playbackState}
+              error={soundEngine.getError()}
+              mixName={mixName}
+              masterVolume={masterVolume}
+              onTogglePlayback={handleTogglePlayback}
+              onMasterVolume={handleMasterVolume}
             />
-            <div className="absolute inset-0 bg-gradient-to-r from-slate-950 via-slate-950/85 to-slate-950/50" />
-            <div className="absolute inset-0 bg-gradient-to-t from-slate-950 via-transparent to-transparent" />
-          </div>
 
-          {/* Hero Content */}
-          <div className="relative z-10 p-6 sm:p-8 lg:p-10 flex flex-col justify-between min-h-[290px]">
-            {/* Top metadata line */}
-            <div className="flex items-center justify-between text-xs text-slate-400">
-              <span className="text-slate-300 font-medium">
-                {currentSoundscape.acousticSurface}
-              </span>
+            <Mixer
+              layers={layers}
+              onToggleLayer={handleToggleLayer}
+              onLayerVolume={handleLayerVolume}
+            />
 
-              <span className="text-[11px] font-mono text-slate-500">
-                {currentSoundscape.recordingSource}
-              </span>
-            </div>
+            <PresetBar
+              presets={presets}
+              activePresetId={activePresetId}
+              edited={edited}
+              onSelect={handleSelectPreset}
+              onDelete={handleDeletePreset}
+              onSaveRequest={() => setSaveDialogOpen(true)}
+            />
 
-            {/* Central Title & Description */}
-            <div className="my-6 max-w-2xl">
-              <h1 className="text-3xl sm:text-4xl lg:text-5xl font-bold tracking-tight text-white mb-2">
-                {currentSoundscape.name}
-              </h1>
-              <p className="text-sm sm:text-base text-slate-300 font-medium mb-1">
-                {currentSoundscape.tagline}
-              </p>
-              <p className="text-xs sm:text-sm text-slate-400 leading-relaxed max-w-xl">
-                {currentSoundscape.description}
-              </p>
-            </div>
-
-            {/* Bottom Actions: Play Trigger & Direct Ambient Layer Toggles */}
-            <div className="flex flex-wrap items-center justify-between gap-4 pt-4 border-t border-slate-800/60">
-              <div className="flex items-center gap-3">
-                <button
-                  onClick={handleTogglePlay}
-                  className="px-5 py-3 rounded-2xl font-semibold text-xs tracking-wide flex items-center gap-2.5 transition-all cursor-pointer shadow-lg active:scale-95 bg-white text-slate-950 hover:bg-slate-100"
-                >
-                  {isPlaying ? (
-                    <>
-                      <Pause className="w-4 h-4 fill-current" />
-                      <span>Pause Soundscape</span>
-                    </>
-                  ) : (
-                    <>
-                      <Play className="w-4 h-4 fill-current ml-0.5" />
-                      <span>Start Listening</span>
-                    </>
-                  )}
-                </button>
-
-                <button
-                  onClick={() => setIsMixerOpen(true)}
-                  className="px-4 py-3 rounded-2xl bg-slate-900 hover:bg-slate-850 border border-slate-700 text-xs font-medium text-slate-300 hover:text-white transition-colors flex items-center gap-1.5 cursor-pointer"
-                >
-                  <SlidersHorizontal className="w-3.5 h-3.5" />
-                  <span>Acoustic Balance</span>
-                </button>
+            {failureNotice && (
+              <div className="pl-band px-4 py-2.5 text-[11.5px] leading-snug text-alert sm:px-5">
+                {failureNotice}
               </div>
-
-              {/* Quick Environmental Toggles (Direct & Uncluttered) */}
-              <div className="flex items-center gap-2">
-                {/* Thunder Quick Toggle */}
-                <button
-                  onClick={() => handleUpdateMixer({ 
-                    thunderEnabled: !mixer.thunderEnabled,
-                    thunderFrequency: !mixer.thunderEnabled ? 'occasional' : 'off',
-                    thunderVolume: !mixer.thunderEnabled ? 0.45 : 0.0
-                  })}
-                  className={`px-3 py-2 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    mixer.thunderEnabled
-                      ? 'bg-amber-950/50 border-amber-500/60 text-amber-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Toggle distant thunder"
-                >
-                  <Zap className="w-3.5 h-3.5" />
-                  <span>Thunder {mixer.thunderEnabled ? 'On' : 'Off'}</span>
-                </button>
-
-                {/* Thunder Strike button if thunder enabled */}
-                {mixer.thunderEnabled && (
-                  <button
-                    onClick={handleTriggerThunder}
-                    className="px-2.5 py-2 rounded-xl bg-amber-950/60 hover:bg-amber-900 border border-amber-700/80 text-amber-200 text-xs font-medium cursor-pointer transition-colors"
-                    title="Trigger immediate thunder rumble"
-                  >
-                    Rumble
-                  </button>
-                )}
-
-                {/* Wind Quick Toggle */}
-                <button
-                  onClick={() => handleUpdateMixer({ 
-                    windEnabled: !mixer.windEnabled,
-                    windVolume: !mixer.windEnabled ? 0.16 : 0.0
-                  })}
-                  className={`px-3 py-2 rounded-xl text-xs font-medium border flex items-center gap-1.5 transition-colors cursor-pointer ${
-                    mixer.windEnabled
-                      ? 'bg-teal-950/50 border-teal-500/60 text-teal-300'
-                      : 'bg-slate-900 border-slate-800 text-slate-400 hover:text-slate-200'
-                  }`}
-                  title="Toggle night wind"
-                >
-                  <Wind className="w-3.5 h-3.5" />
-                  <span>Wind {mixer.windEnabled ? 'On' : 'Off'}</span>
-                </button>
-              </div>
-            </div>
+            )}
           </div>
-        </section>
-
-        {/* Curated Soundscape Environments Grid */}
-        <section aria-label="Curated Rain Environments" className="mb-8">
-          <div className="flex items-center justify-between mb-5">
-            <div>
-              <h2 className="text-base font-semibold text-slate-100">
-                Rain Environments
-              </h2>
-              <p className="text-xs text-slate-400 mt-0.5">
-                Authentic field recordings · Click to listen immediately
-              </p>
-            </div>
-
-            <span className="text-[11px] font-mono text-slate-500">
-              6 distinct soundscapes
-            </span>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {SOUNDSCAPES.map((soundscape) => (
-              <SoundscapeCard
-                key={soundscape.id}
-                soundscape={soundscape}
-                isSelected={currentSoundscape.id === soundscape.id}
-                isPlaying={isPlaying}
-                onSelect={() => handleSelectSoundscape(soundscape)}
-              />
-            ))}
-          </div>
-        </section>
-
-        {/* Quiet Footer */}
-        <footer className="pt-8 border-t border-slate-900 flex flex-col sm:flex-row items-center justify-between gap-4 text-xs text-slate-500">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold text-slate-400">Rainfocus</span>
-            <span aria-hidden="true">·</span>
-            <span>Natural rain acoustics for sleep, focus, and calm</span>
-          </div>
-
-          <div className="flex items-center gap-4">
-            <button
-              onClick={() => setIsAttributionOpen(true)}
-              className="hover:text-slate-300 transition-colors cursor-pointer"
-            >
-              Audio Licenses
-            </button>
-            <button
-              onClick={() => setIsTimerOpen(true)}
-              className="hover:text-slate-300 transition-colors cursor-pointer"
-            >
-              Sleep Timer
-            </button>
-            <button
-              onClick={() => setIsOledBedtimeOpen(true)}
-              className="hover:text-slate-300 transition-colors cursor-pointer"
-            >
-              Bedside Mode
-            </button>
-          </div>
-        </footer>
+        </main>
       </div>
 
-      {/* Single Persistent Audio Player Bar */}
-      <PersistentPlayer
-        currentSoundscape={currentSoundscape}
-        isPlaying={isPlaying}
-        onTogglePlay={handleTogglePlay}
-        masterVolume={masterVolume}
-        onVolumeChange={handleVolumeChange}
-        onOpenTimer={() => setIsTimerOpen(true)}
-        onOpenMixer={() => setIsMixerOpen(true)}
-        timerRemainingFormatted={formatRemainingTimer()}
-        timerIsActive={timerIsActive}
-      />
-
-      {/* Acoustic Layer Mixer Modal */}
-      <SoundscapeLayersPanel
-        isOpen={isMixerOpen}
-        onClose={() => setIsMixerOpen(false)}
-        mixer={mixer}
-        onUpdateMixer={handleUpdateMixer}
-        onResetDefaults={handleResetDefaults}
-        onTriggerThunder={handleTriggerThunder}
-        soundscapeName={currentSoundscape.name}
-      />
-
-      {/* Sleep Timer Modal */}
-      <TimerModal
-        isOpen={isTimerOpen}
-        onClose={() => setIsTimerOpen(false)}
-        isActive={timerIsActive}
-        remainingSeconds={timerRemainingSeconds}
-        totalMinutes={timerTotalMinutes}
-        fadeSeconds={timerFadeSeconds}
-        onStartTimer={handleStartTimer}
-        onCancelTimer={handleCancelTimer}
-        onAddTime={handleAddTime}
-        onSetFadeSeconds={(secs) => setTimerFadeSeconds(secs)}
-        onEnableContinuous={handleEnableContinuous}
-        isContinuous={isContinuous}
-      />
-
-      {/* Minimal Bedside Mode */}
-      {isOledBedtimeOpen && (
-        <OledBedtimeView
-          currentSoundscape={currentSoundscape}
-          isPlaying={isPlaying}
-          onTogglePlay={handleTogglePlay}
-          timerRemainingFormatted={formatRemainingTimer()}
-          fadeFactor={soundEngine.getFadeFactor()}
-          onClose={() => setIsOledBedtimeOpen(false)}
-        />
+      {saveDialogOpen && (
+        <SaveMixDialog onSave={handleSaveMix} onClose={() => setSaveDialogOpen(false)} />
       )}
-
-      {/* Audio Licenses & Attribution Modal */}
-      <AttributionModal
-        isOpen={isAttributionOpen}
-        onClose={() => setIsAttributionOpen(false)}
-      />
     </div>
   );
 }

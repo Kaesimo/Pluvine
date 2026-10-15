@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Pluvine app icon: a rain droplet with the three gauge bars cut out in
+       negative space — the instrument (mixer bars) inside the rain. -->
+  <defs>
+    <radialGradient id="plate" cx="50%" cy="38%" r="78%">
+      <stop offset="0%" stop-color="#111d26"/>
+      <stop offset="100%" stop-color="#06090c"/>
+    </radialGradient>
+    <linearGradient id="drop" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#a9cede"/>
+      <stop offset="100%" stop-color="#7db1cb"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" rx="224" fill="url(#plate)"/>
+  <rect x="10" y="10" width="1004" height="1004" rx="216" fill="none" stroke="#8dbdd2" stroke-opacity="0.14" stroke-width="8"/>
+  <path fill="url(#drop)" fill-rule="evenodd" d="M512 236
+    C456 356 350 480 350 618
+    A162 162 0 0 0 674 618
+    C674 480 568 356 512 236Z
+    M396 518 A28 28 0 0 1 452 518 V678 A28 28 0 0 1 396 678 Z
+    M484 564 A28 28 0 0 1 540 564 V678 A28 28 0 0 1 484 678 Z
+    M572 610 A28 28 0 0 1 628 610 V678 A28 28 0 0 1 572 678 Z"/>
+</svg>

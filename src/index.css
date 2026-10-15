@@ -1,40 +1,584 @@
 @import "tailwindcss";
+@import "@fontsource-variable/ibm-plex-sans";
+@import "@fontsource/ibm-plex-mono/400.css";
+@import "@fontsource/ibm-plex-mono/500.css";
+
+/* =============================================================================
+   Pluvine design system
+   -----------------------------------------------------------------------------
+   Direction: a measuring instrument for rain. One dark plate of hairline rules
+   over the live rain field. No cards around controls, no glass, no glow.
+
+   - Hairlines (1px) separate bands; boxes exist only where a control needs a
+     boundary.
+   - The mixer reads as a bank of gauge columns: ticks every 25%, level shown
+     as the fill height (the slider's real value, never decoration).
+   - One accent (pale rain blue) for active sound, brass ONLY for the sleep
+     timer, red ONLY for errors.
+   - Type: IBM Plex Sans for language, IBM Plex Mono for measured numbers.
+   ========================================================================== */
+
+@theme {
+  --font-sans: "IBM Plex Sans Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SF Mono", monospace;
+
+  --color-night: #06090c;
+  --color-text: #e4ebf0;
+  --color-dim: #96a4ae;
+  --color-faint: #626e78;
+
+  --color-hair: rgba(207, 221, 231, 0.13);
+  --color-hair-2: rgba(207, 221, 231, 0.28);
+  --color-plate: rgba(7, 10, 14, 0.74);
+
+  --color-rain: #8dbdd2;
+  --color-rain-soft: rgba(141, 189, 210, 0.25);
+  --color-brass: #c2a26e;
+  --color-alert: #d08a76;
+}
 
 @layer base {
+  html {
+    color-scheme: dark;
+  }
+
   body {
-    @apply bg-[#07090e] text-slate-100 antialiased selection:bg-indigo-500/30 selection:text-indigo-200 overflow-x-hidden;
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    background-color: var(--color-night);
+    color: var(--color-text);
+    font-family: var(--font-sans);
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+    overflow-x: hidden;
   }
 
-  /* Custom range sliders */
-  input[type="range"] {
-    @apply appearance-none bg-slate-800 rounded-lg h-1.5 focus:outline-none transition-all;
+  ::selection {
+    background: rgba(141, 189, 210, 0.3);
   }
 
-  input[type="range"]::-webkit-slider-thumb {
-    @apply appearance-none w-3.5 h-3.5 rounded-full bg-slate-100 hover:scale-125 transition-transform cursor-pointer shadow-md;
-  }
-
-  input[type="range"]::-moz-range-thumb {
-    @apply w-3.5 h-3.5 rounded-full bg-slate-100 border-none cursor-pointer shadow-md;
+  /* One focus treatment everywhere, visible over the rain. */
+  :focus-visible {
+    outline: 2px solid var(--color-rain);
+    outline-offset: 2px;
+    border-radius: 2px;
   }
 }
 
-/* Custom subtle scrollbar */
+@layer components {
+  /* --- the instrument plate ------------------------------------------- */
+
+  .pl-plate {
+    background-color: var(--color-plate);
+    border: 1px solid var(--color-hair);
+    border-radius: 4px;
+    backdrop-filter: none; /* deliberately: no glassmorphism */
+  }
+
+  .pl-band + .pl-band {
+    border-top: 1px solid var(--color-hair);
+  }
+
+  /* --- horizontal slider (master volume) -------------------------------- */
+
+  .pl-range {
+    -webkit-appearance: none;
+    appearance: none;
+    height: 28px; /* comfortable touch target */
+    background: transparent;
+    margin: 0;
+    cursor: pointer;
+    --fill: 0%;
+  }
+
+  .pl-range::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 1px;
+    background: linear-gradient(
+      to right,
+      var(--color-rain) var(--fill),
+      rgba(207, 221, 231, 0.16) var(--fill)
+    );
+  }
+
+  .pl-range::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 12px;
+    height: 18px;
+    margin-top: -7px; /* centre an 18px cap on the 4px track */
+    border-radius: 2px;
+    background: var(--color-text);
+  }
+
+  .pl-range::-moz-range-track {
+    height: 4px;
+    border-radius: 1px;
+    background: rgba(207, 221, 231, 0.16);
+  }
+
+  .pl-range::-moz-range-progress {
+    height: 4px;
+    border-radius: 1px;
+    background: var(--color-rain);
+  }
+
+  .pl-range::-moz-range-thumb {
+    width: 12px;
+    height: 18px;
+    border: none;
+    border-radius: 2px;
+    background: var(--color-text);
+  }
+
+  /* --- vertical channel fader (a standard range rotated -90°) ------------ */
+
+  .pl-fader {
+    position: relative;
+    width: 100%;
+    height: var(--fader-len, 148px);
+  }
+
+  /* the gauge column: centre hairline + measurement ticks at 25% steps */
+  .pl-fader::before {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 4px;
+    bottom: 4px;
+    width: 1px;
+    transform: translateX(-0.5px);
+    background: rgba(207, 221, 231, 0.18);
+  }
+
+  .pl-fader::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    top: 0;
+    bottom: 0;
+    width: 9px;
+    transform: translateX(-4.5px);
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(207, 221, 231, 0.32) 0 1px,
+      transparent 1px 25%
+    );
+  }
+
+  .pl-fader-input {
+    -webkit-appearance: none;
+    appearance: none;
+    position: absolute;
+    left: 50%;
+    top: 50%;
+    width: var(--fader-len, 148px); /* on-screen length after rotation */
+    height: 40px; /* on-screen width: the touch zone */
+    margin: 0;
+    padding: 0;
+    transform: translate(-50%, -50%) rotate(-90deg);
+    transform-origin: center;
+    background: transparent;
+    z-index: 1;
+    cursor: pointer;
+    --fill: 0%;
+    --fader-fill: var(--color-rain);
+  }
+
+  .pl-fader-input::-webkit-slider-runnable-track {
+    height: 4px;
+    border-radius: 1px;
+    background: linear-gradient(
+      to right,
+      var(--fader-fill) var(--fill),
+      rgba(207, 221, 231, 0.15) var(--fill)
+    );
+  }
+
+  .pl-fader-input::-webkit-slider-thumb {
+    -webkit-appearance: none;
+    appearance: none;
+    width: 8px;
+    height: 18px; /* screen: 18px wide × 8px tall cap */
+    margin-top: -7px; /* centre the 18px cap on the 4px track. (This was -2px,
+                        which left every fader thumb visibly off its rail.) */
+    border-radius: 2px;
+    background: var(--color-text);
+  }
+
+  .pl-fader-input::-moz-range-track {
+    height: 4px;
+    border-radius: 1px;
+    background: rgba(207, 221, 231, 0.15);
+  }
+
+  .pl-fader-input::-moz-range-progress {
+    height: 4px;
+    border-radius: 1px;
+    background: var(--fader-fill);
+  }
+
+  .pl-fader-input::-moz-range-thumb {
+    width: 8px;
+    height: 18px;
+    border: none;
+    border-radius: 2px;
+    background: var(--color-text);
+  }
+
+  /* disabled channel: readable but clearly off */
+  .pl-fader.is-off .pl-fader-input {
+    --fader-fill: var(--color-rain-soft);
+  }
+
+  /* On phones the bank must stay one screen: presets live below the mixer and
+     have to remain visible without scrolling. */
+  @media (max-width: 640px) {
+    .pl-fader {
+      --fader-len: 96px;
+    }
+  }
+
+  .pl-fader.is-off .pl-fader-input::-webkit-slider-thumb {
+    background: var(--color-dim);
+  }
+
+  .pl-fader.is-off .pl-fader-input::-moz-range-thumb {
+    background: var(--color-dim);
+  }
+
+  /* --- buttons ------------------------------------------------------------ */
+
+  .pl-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 7px;
+    font-size: 13.5px;
+    font-weight: 500;
+    line-height: 1;
+    color: var(--color-dim);
+    background: rgba(255, 255, 255, 0.02);
+    border: 1px solid var(--color-hair);
+    border-radius: 4px;
+    padding: 9px 13px;
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      border-color 0.15s ease,
+      background-color 0.15s ease;
+  }
+
+  .pl-btn:hover {
+    color: var(--color-text);
+    border-color: var(--color-hair-2);
+  }
+
+  .pl-btn.is-active {
+    color: var(--color-text);
+    border-color: rgba(141, 189, 210, 0.55);
+    background: rgba(141, 189, 210, 0.08);
+  }
+
+  .pl-btn.is-brass.is-active {
+    color: var(--color-brass);
+    border-color: rgba(194, 162, 110, 0.55);
+    background: rgba(194, 162, 110, 0.08);
+  }
+
+  .pl-btn-quiet {
+    border-color: transparent;
+    background: transparent;
+  }
+
+  .pl-btn-solid {
+    color: var(--color-night);
+    background: var(--color-text);
+    border-color: var(--color-text);
+    font-weight: 600;
+  }
+
+  .pl-btn-solid:hover {
+    color: var(--color-night);
+    background: #ffffff;
+    border-color: #ffffff;
+  }
+
+  /* --- transport ----------------------------------------------------------- */
+
+  .pl-play {
+    width: 64px;
+    height: 64px;
+    border-radius: 4px;
+    display: grid;
+    place-items: center;
+    cursor: pointer;
+    color: var(--color-night);
+    background: var(--color-text);
+    border: 1px solid transparent;
+    transition:
+      background-color 0.15s ease,
+      color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .pl-play:hover {
+    background: #ffffff;
+  }
+
+  /* while sound is flowing the button calms down: state is shown by the icon
+     and the status line, not by a glowing control */
+  .pl-play.is-on {
+    background: transparent;
+    color: var(--color-text);
+    border-color: var(--color-hair-2);
+  }
+
+  .pl-play.is-on:hover {
+    background: rgba(255, 255, 255, 0.05);
+  }
+
+  /* --- channel toggle ------------------------------------------------------ */
+
+  .pl-channel {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+  }
+
+  .pl-toggle {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 7px;
+    width: 100%;
+    padding: 6px 0 3px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    color: var(--color-faint);
+    transition: color 0.15s ease;
+  }
+
+  .pl-toggle:hover {
+    color: var(--color-dim);
+  }
+
+  .pl-toggle[aria-pressed="true"] {
+    color: var(--color-text);
+  }
+
+  .pl-toggle .box {
+    width: 18px;
+    height: 18px;
+    border: 1px solid var(--color-hair-2);
+    border-radius: 3px;
+    display: grid;
+    place-items: center;
+    transition:
+      background-color 0.15s ease,
+      border-color 0.15s ease;
+  }
+
+  .pl-toggle[aria-pressed="true"] .box {
+    background: var(--color-rain);
+    border-color: var(--color-rain);
+  }
+
+  .pl-toggle .label {
+    font-size: 12.5px;
+    font-weight: 500;
+    line-height: 1.2;
+    text-align: center;
+    min-height: 2.4em; /* keeps faders aligned when names wrap */
+    display: flex;
+    align-items: flex-start;
+    justify-content: center;
+    width: 100%;
+  }
+
+  /* --- presets --------------------------------------------------------------- */
+
+  .pl-x {
+    display: grid;
+    place-items: center;
+    width: 24px;
+    height: 24px;
+    padding: 0;
+    border: none;
+    border-radius: 3px;
+    background: transparent;
+    color: var(--color-faint);
+    cursor: pointer;
+    transition:
+      color 0.15s ease,
+      background-color 0.15s ease;
+  }
+
+  .pl-x:hover {
+    color: var(--color-text);
+    background: rgba(255, 255, 255, 0.07);
+  }
+
+  .pl-preset {
+    position: relative;
+    font-size: 14px;
+    font-weight: 450;
+    line-height: 1;
+    color: var(--color-dim);
+    background: none;
+    border: none;
+    padding: 8px 4px;
+    cursor: pointer;
+    box-shadow: inset 0 -1px 0 transparent;
+    transition:
+      color 0.15s ease,
+      box-shadow 0.15s ease;
+  }
+
+  .pl-preset:hover {
+    color: var(--color-text);
+  }
+
+  .pl-preset[aria-pressed="true"] {
+    color: var(--color-text);
+    box-shadow: inset 0 -1px 0 var(--color-rain);
+  }
+
+  /* --- popover / dialog ------------------------------------------------------ */
+
+  .pl-pop {
+    background-color: rgba(8, 11, 15, 0.97);
+    border: 1px solid var(--color-hair-2);
+    border-radius: 4px;
+    box-shadow: 0 16px 40px rgba(0, 0, 0, 0.55);
+  }
+
+  .pl-input {
+    width: 100%;
+    font-size: 15px;
+    color: var(--color-text);
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid var(--color-hair);
+    border-radius: 4px;
+    padding: 11px 12px;
+  }
+
+  .pl-input::placeholder {
+    color: var(--color-faint);
+  }
+
+  .pl-input:focus {
+    outline: none;
+    border-color: rgba(141, 189, 210, 0.6);
+  }
+
+  .pl-input:focus-visible {
+    outline: 2px solid var(--color-rain);
+    outline-offset: 1px;
+  }
+}
+
+/* --- number style ---------------------------------------------------------- */
+.pl-num {
+  font-family: var(--font-mono);
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum";
+}
+
+/* --- scrollbars ------------------------------------------------------------- */
 ::-webkit-scrollbar {
-  width: 6px;
-  height: 6px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
-  background: rgba(15, 23, 42, 0.6);
+  background: transparent;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(51, 65, 85, 0.6);
-  border-radius: 9999px;
+  background: rgba(141, 161, 175, 0.35);
+  border-radius: 4px;
 }
 
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(71, 85, 105, 0.9);
+/* --- sleep & rain-only mode ---------------------------------------------------
+   Two ways the interface leaves the screen so only the rain remains:
+
+   - Sleep mode (.is-sleeping): the chrome fades on idle; ANY pointer/key
+     activity brings it all back. The timer stays visible unless the user
+     turned "Keep countdown on screen" off (then it carries .pl-ui too).
+   - Rain-only mode (.is-rainonly): EVERYTHING is gone — chrome, timer, even
+     the cursor — and pointer activity does NOT bring the chrome back. Only
+     the Rain-only button (.pl-rainonly) wakes on activity so it can be found
+     and clicked again; .is-rainonly-idle marks the moment even that button
+     has drifted out (and the cursor with it). */
+.pl-ui {
+  transition: opacity 0.7s ease;
+}
+
+.is-sleeping .pl-ui,
+.is-rainonly .pl-ui {
+  opacity: 0;
+  transition: opacity 3.5s ease;
+}
+
+.is-rainonly .pl-timerband {
+  opacity: 0;
+  transition: opacity 3.5s ease;
+}
+
+.pl-rainonly {
+  transition: opacity 0.7s ease;
+}
+
+.is-sleeping .pl-rainonly,
+.is-rainonly .pl-rainonly {
+  opacity: 0;
+  transition: opacity 3.5s ease;
+}
+
+.is-rainonly .pl-rainonly.is-awake {
+  opacity: 1;
+  transition: opacity 0.7s ease;
+}
+
+/* The cursor goes with the faded UI: it returns the instant activity wakes it. */
+.is-sleeping,
+.is-sleeping *,
+.is-rainonly-idle,
+.is-rainonly-idle * {
+  cursor: none;
+}
+
+/* --- sleep-timer popover: "keep countdown" check ---------------------------- */
+
+.pl-check {
+  width: 16px;
+  height: 16px;
+  flex: none;
+  border: 1px solid var(--color-hair-2);
+  border-radius: 3px;
+  display: grid;
+  place-items: center;
+  color: var(--color-night);
+  transition:
+    background-color 0.15s ease,
+    border-color 0.15s ease;
+}
+
+.pl-check.is-on {
+  background: var(--color-brass);
+  border-color: var(--color-brass);
+}
+
+/* --- reduced motion ---------------------------------------------------------- */
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    transition-duration: 0.01ms !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+  }
 }

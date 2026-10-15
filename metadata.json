@@ -1,6 +1,5 @@
 {
-  "name": "Nocturne: Lyria Rain & Sleep Soundscapes",
-  "description": "Atmospheric rain and thunder sleepscapes powered by Lyria AI and procedural acoustics, featuring customizable bedtime timers with gradual audio fade-out.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+  "name": "Pluvine",
+  "description": "Ambient rain mixer: nine recordable sound layers with per-layer levels, presets, and a sleep timer, presented over an animated rain field.",
+  "requestFramePermissions": []
 }

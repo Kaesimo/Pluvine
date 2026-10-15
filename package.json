@@ -1,37 +1,79 @@
 {
-  "name": "react-example",
+  "name": "pluvine",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.0.0",
+  "description": "Ambient rain mixer: nine layered recordings, one window, no accounts",
+  "author": {
+    "name": "Kaesimo",
+    "email": "kaesimo@localhost"
+  },
+  "homepage": "https://github.com/Kaesimo/Rainfocus",
   "type": "module",
+  "main": "electron/main.cjs",
   "scripts": {
     "dev": "tsx server.ts",
     "build": "vite build",
-    "start": "node server.ts",
+    "start": "NODE_ENV=production tsx server.ts",
     "preview": "vite preview",
-    "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx test/soundEngine.test.ts",
+    "electron": "vite build && electron .",
+    "sounds:sync": "node scripts/sync-sounds.mjs",
+    "transcode:sounds": "node scripts/transcode-sounds.mjs",
+    "dist:linux": "VITE_SOUND_EXT=mp3 vite build && node scripts/transcode-sounds.mjs && electron-builder --linux",
+    "pack:arch": "VITE_SOUND_EXT=mp3 vite build && node scripts/transcode-sounds.mjs && tar -czf packaging/pluvine-$npm_package_version.tar.gz package.json electron dist build"
   },
   "dependencies": {
-    "@google/genai": "^2.4.0",
+    "@fontsource-variable/ibm-plex-sans": "^5.3.0",
+    "@fontsource/ibm-plex-mono": "^5.3.0",
     "@tailwindcss/vite": "^4.3.3",
     "@vitejs/plugin-react": "^6.1.1",
-    "lucide-react": "^0.546.0",
+    "dotenv": "^17.2.3",
+    "express": "^4.21.2",
     "react": "^19.0.1",
     "react-dom": "^19.0.1",
-    "vite": "^8.3.0",
-    "express": "^4.21.2",
-    "dotenv": "^17.2.3",
-    "motion": "^12.23.24"
+    "vite": "^8.3.0"
   },
   "devDependencies": {
+    "@types/express": "^4.17.21",
     "@types/node": "^22.14.0",
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
-    "autoprefixer": "^10.4.21",
-    "esbuild": "^0.25.0",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3",
     "tailwindcss": "^4.3.3",
     "tsx": "^4.21.0",
-    "typescript": "^7.0.2",
-    "@types/express": "^4.17.21"
+    "typescript": "^7.0.2"
+  },
+  "build": {
+    "appId": "app.pluvine",
+    "productName": "Pluvine",
+    "asar": true,
+    "directories": {
+      "output": "release",
+      "buildResources": "build"
+    },
+    "files": [
+      "electron/**",
+      "dist/**",
+      "package.json",
+      "!node_modules"
+    ],
+    "linux": {
+      "target": [
+        "AppImage",
+        "pacman"
+      ],
+      "category": "Audio",
+      "synopsis": "Ambient rain mixer",
+      "executableName": "pluvine",
+      "syncDesktopName": true,
+      "desktop": {
+        "entry": {
+          "Categories": "Audio;AudioVideo;Utility;",
+          "StartupWMClass": "pluvine"
+        }
+      }
+    }
   }
 }

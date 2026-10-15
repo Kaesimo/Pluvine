@@ -1,0 +1,10 @@
+[Desktop Entry]
+Type=Application
+Name=Pluvine
+GenericName=Ambient rain mixer
+Comment=Layer and mix nine rain recordings into a custom soundscape
+Exec=pluvine
+Icon=pluvine
+Terminal=false
+Categories=Audio;AudioVideo;Utility;
+StartupWMClass=pluvine

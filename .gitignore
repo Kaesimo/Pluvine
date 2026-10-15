@@ -1,8 +1,21 @@
 node_modules/
-build/
 dist/
+release/
 coverage/
 .DS_Store
 *.log
-.env*
-!.env.example
+
+# packaging artifacts (built by pack:arch / makepkg)
+packaging/*.tar.gz
+packaging/*.pkg.tar.zst
+packaging/src/
+packaging/pkg/
+
+# the user's original recordings — never committed (multi-GB; build the
+# runtime audio with `npm run sounds:sync`)
+sounds/
+
+# runtime audio built from sounds/ (the two small thunder one-shots stay
+# tracked so a fresh clone runs out of the box)
+public/sounds/*
+!public/sounds/capaholiczsfx-*.mp3

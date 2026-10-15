@@ -1,0 +1,58 @@
+# Maintainer: Kaesimo
+#
+# Pluvine — Arch package, the "Arch-native" way.
+#
+# Instead of bundling yet another 100+ MB Electron copy, this package depends
+# on the system `electron` package and ships ONLY the app: a static web build
+# (dist/), the small main process (electron/), and a launcher script.
+# `pacman -S electron` then provides updates + security fixes for every
+# Electron app on the system at once.
+#
+# Workflow:
+#   1. cd packaging && npm run pack:arch   (in the repo root, actually)
+#      → creates packaging/pluvine-$pkgver.tar.gz from the current build
+#   2. makepkg -si
+#      → builds and installs /opt/pluvine + /usr/bin/pluvine
+#
+# Keep pkgver in sync with package.json ("version") — pack:arch names the
+# tarball from it.
+
+pkgname=pluvine
+pkgver=1.0.0
+pkgrel=1
+pkgdesc="Ambient rain mixer: ten layered recordings, one window, no accounts"
+arch=('x86_64')
+url="https://github.com/Kaesimo/Rainfocus"
+license=('LicenseRef-Proprietary')      # ← project ships no LICENSE yet; pick one
+depends=('electron')
+# options: none needed — the payload is pure JS/CSS/HTML/audio, no ELF binaries.
+
+# The tarball is produced locally by `npm run pack:arch`; the .desktop file
+# lives next to this PKGBUILD. sha256 SKIP is fine for local sources —
+# compute real sums before publishing to the AUR.
+source=("$pkgname-$pkgver.tar.gz" "pluvine.desktop")
+sha256sums=('SKIP' 'SKIP')
+
+build() {
+  # Nothing to compile: dist/ is a prebuilt web bundle, electron/ is plain JS.
+  :
+}
+
+package() {
+  # App payload → /opt/pluvine (the launcher passes this path to electron).
+  install -d "$pkgdir/opt/$pkgname"
+  cp -r "$srcdir/package.json" "$srcdir/electron" "$srcdir/dist" \
+    "$pkgdir/opt/$pkgname/"
+
+  # Launcher → /usr/bin/pluvine: run the SYSTEM electron against /opt app.
+  install -Dm755 /dev/stdin "$pkgdir/usr/bin/$pkgname" <<'EOF'
+#!/bin/sh
+exec electron /opt/pluvine "$@"
+EOF
+
+  # Integration: app menu entry + icon.
+  install -Dm644 "$srcdir/pluvine.desktop" \
+    "$pkgdir/usr/share/applications/pluvine.desktop"
+  install -Dm644 "$srcdir/build/icon.png" \
+    "$pkgdir/usr/share/pixmaps/pluvine.png"
+}
