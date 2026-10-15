@@ -12,8 +12,9 @@ packaging/src/
 packaging/pkg/
 
 # the user's original recordings — never committed (multi-GB; build the
-# runtime audio with `npm run sounds:sync`)
+# runtime audio with `npm run sounds:sync`). The folder README stays tracked.
 /sounds/
+!/sounds/README.md
 
 # runtime audio built from sounds/ (the two small thunder one-shots stay
 # tracked so a fresh clone runs out of the box)
