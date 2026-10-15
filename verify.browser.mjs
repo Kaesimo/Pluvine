@@ -113,26 +113,26 @@ try {
     `all ten recordings decoded with real durations (min ${Math.min(...mediaInfo.map((m) => m.duration)).toFixed(1)}s)`
   );
 
-  // Real thunder strike: the one-shot element leaves its position at 0.
-  const strike = await page.evaluate(() => {
-    const el = window.__pluvine.runtime.get('thunder-distant-rumble').el;
-    return { currentTime: el.currentTime, duration: el.duration, paused: el.paused };
-  });
+  // Real thunder strike: strikes play on their own throwaway elements (the
+  // layer's main element stays parked), so watch getStrikeElements() — a
+  // live voice advancing past 0 on the real 36.4s recording is the proof.
   const strikeFired = await (async () => {
     const deadline = Date.now() + 9000;
     while (Date.now() < deadline) {
       const s = await page.evaluate(() => {
-        const el = window.__pluvine.runtime.get('thunder-distant-rumble').el;
+        const voices = window.__pluvine.getStrikeElements();
+        if (voices.length === 0) return null;
+        const el = voices[0];
         return { currentTime: el.currentTime, duration: el.duration };
       });
-      if (s.currentTime > 0.05) return s;
+      if (s && s.currentTime > 0.05) return s;
       await sleep(250);
     }
-    return strike;
+    return null;
   })();
   ok(
-    strikeFired.currentTime > 0.05,
-    `scheduled thunder strike played the real recording (t=${strikeFired.currentTime.toFixed(2)}s of ${strikeFired.duration.toFixed(1)}s)`
+    strikeFired !== null && strikeFired.currentTime > 0.05,
+    `scheduled thunder strike played the real recording on a strike voice (t=${strikeFired ? strikeFired.currentTime.toFixed(2) : '?'}s of ${strikeFired ? strikeFired.duration.toFixed(1) : '?'}s)`
   );
 
   await page.screenshot({ path: `${SHOTS}/state-playing.png` });

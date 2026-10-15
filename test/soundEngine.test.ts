@@ -16,7 +16,9 @@
  *  6. preset switching during playback (single reconciliation path)
  *  7. missing / failed / blocked recordings → honest failure reporting and
  *     synthesized fallback voices (engine keeps working)
- *  8. thunder scheduler lifecycle: schedule, strikes, bursts, pairing, cancellation
+ *  8. thunder scheduler lifecycle: schedule, strikes, bursts, pairing,
+ *     cancellation, + strike-voice overlap (never retrigger/chop a sounding
+ *     rumble) and the concurrency cap
  *  9. sleep timer: auto-start, countdown, fade curve, expiry → stop,
  *     pause keeps it, manual stop cancels it, +time
  * 10. repeated lifecycle stress without leaks; honest init failure + retry;
@@ -399,6 +401,18 @@ function elementFor(engine: Engine, layerId: string): MockAudioElement {
   const el = engineElements(engine).find((e) => e.src.endsWith(suffix));
   if (!el) throw new Error(`no element for layer ${layerId}`);
   return el;
+}
+
+/**
+ * Throwaway strike-voice elements for a thunder layer. Strike voices are
+ * created after construction, so they follow the layer's parked main element
+ * (index 0) in instance order.
+ */
+function strikeElementsFor(engine: Engine, layerId: string): MockAudioElement[] {
+  const suffix = LAYER_ASSETS[layerId];
+  return engineElements(engine)
+    .filter((e) => e.src.endsWith(suffix))
+    .slice(1);
 }
 
 async function test(name: string, fn: () => Promise<void> | void): Promise<void> {
@@ -793,17 +807,27 @@ async function runTests(): Promise<void> {
 
     const hit = await until(() => strikes >= 1, 1000);
     assert(hit, 'first strike fired within the quick window');
-    const distant = elementFor(engine, 'thunder-distant-rumble');
-    assert(distant.playCalls >= 1, 'strike played the thunder recording');
-    assertEq(distant.currentTime, 0, 'strike starts from the beginning');
+    const voices = strikeElementsFor(engine, 'thunder-distant-rumble');
+    assertEq(voices.length, 1, 'the strike plays on its own throwaway element');
+    assertEq(voices[0].playCalls, 1, 'the strike voice played once');
+    assertEq(voices[0].currentTime, 0, 'strike starts from the beginning');
     assert(
-      distant.volume >= 0.35 && distant.volume <= 0.6,
-      `strike intensity within the distant-thunder profile (${distant.volume.toFixed(2)})`
+      voices[0].volume >= 0.35 && voices[0].volume <= 0.6,
+      `strike intensity within the distant-thunder profile (${voices[0].volume.toFixed(2)})`
     );
+    assertEq(
+      elementFor(engine, 'thunder-distant-rumble').playCalls,
+      0,
+      'the parked main element is never touched by strikes'
+    );
+    assertEq(engine.getDiagnostics().activeStrikes, 1, 'one strike voice is sounding');
     assertEq(engine.getState(), 'playing', 'a strike never disrupts playback state');
 
     engine.pause();
     assertEq(engine.getDiagnostics().pendingThunder, false, 'pause clears the pending strike');
+    await sleep(400);
+    assertEq(engine.getDiagnostics().activeStrikes, 0, 'pause fades out the sounding strike voice');
+    assert(voices[0].paused, 'the strike element is paused after the fade');
 
     await engine.resume();
     assertEq(engine.getDiagnostics().pendingThunder, true, 'resume re-arms the scheduler');
@@ -830,6 +854,11 @@ async function runTests(): Promise<void> {
       'synthesized strike created its oscillator voice'
     );
     assertEq(elementFor(engine, 'thunder-distant-rumble').playCalls, 0, 'failed file never plays');
+    assertEq(
+      strikeElementsFor(engine, 'thunder-distant-rumble').length,
+      0,
+      'a failed recording never spawns strike voices'
+    );
     assertEq(engine.getAssetFailures().length, 1, 'failure remains visible to the UI');
   });
 
@@ -848,9 +877,21 @@ async function runTests(): Promise<void> {
     await engine.play();
     const burst = await until(() => strikes >= 4, 1000);
     assert(burst, `primary + 3 burst follow-ups fired quickly (got ${strikes})`);
-    const distant = elementFor(engine, 'thunder-distant-rumble');
-    assert(distant.playCalls >= 4, 'each burst member retriggered the recording');
-    assertEq(distant.currentTime, 0, 'every burst strike still starts from 0 (no offset games)');
+    const voices = strikeElementsFor(engine, 'thunder-distant-rumble');
+    assert(
+      voices.length >= 4,
+      `each burst member got its own strike voice (got ${voices.length})`
+    );
+    assert(
+      voices[0].playCalls === 1,
+      'the first rumble was NEVER retriggered (regression: the old shared-element restart was the stutter)'
+    );
+    assertEq(voices[0].currentTime, 0, 'no offset games: every voice starts its recording from 0');
+    assert(voices.every((v) => v.playCalls === 1), 'each voice played exactly once');
+    assert(
+      voices.filter((v) => !v.paused).length >= 2,
+      'burst rumbles overlap instead of cutting each other off'
+    );
 
     const diag = engine.getDiagnostics();
     assertEq(diag.pendingThunder, true, 'base strike still pending after the burst drained');
@@ -875,17 +916,45 @@ async function runTests(): Promise<void> {
 
     const paired = await until(
       () =>
-        elementFor(engine, 'thunder-distant-rumble').playCalls >= 1 &&
-        elementFor(engine, 'thunder-big-rumble').playCalls >= 1,
+        strikeElementsFor(engine, 'thunder-distant-rumble').length >= 1 &&
+        strikeElementsFor(engine, 'thunder-big-rumble').length >= 1,
       1000
     );
     assert(paired, 'the paired moment played BOTH thunder recordings');
-    const heavy = elementFor(engine, 'thunder-big-rumble');
+    const heavyVoice = strikeElementsFor(engine, 'thunder-big-rumble')[0];
     assert(
-      heavy.volume >= 0.65 && heavy.volume <= 1,
-      `paired strike used the heavy profile (${heavy.volume.toFixed(2)})`
+      heavyVoice.volume >= 0.65 && heavyVoice.volume <= 1,
+      `paired strike used the heavy profile (${heavyVoice.volume.toFixed(2)})`
     );
     engine.pause();
+  });
+
+  await test('thunder cap: too many overlapping strikes fade the oldest, never pile up', async () => {
+    // Draw order (single thunder layer, no pair draw):
+    // quick, pick, burst-roll, size(3), gap, pick, gap, pick, gap, pick,
+    // burst-roll2, size2(1), gap, pick → 5 strikes total.
+    const draws = [0, 0, 0.1, 0.99, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.1, 0, 0.5, 0.5];
+    const engine = makeEngine({
+      quickStrikeDelay: [10, 20],
+      burstDelay: [10, 20],
+      rng: () => draws.shift() ?? 1,
+    });
+    let strikes = 0;
+    engine.setOnThunderStrike(() => strikes++);
+
+    await engine.play();
+    const five = await until(() => strikes >= 5, 1000);
+    assert(five, `five strikes fired quickly (got ${strikes})`);
+    const voices = strikeElementsFor(engine, 'thunder-distant-rumble');
+    assertEq(voices.length, 5, 'five strike voices were created');
+    assert(!voices[4].paused, 'the newest voice is sounding');
+
+    await sleep(400); // let the eviction fade land
+    assert(voices[0].paused, 'the oldest voice was evicted at the cap (faded, element paused)');
+    assertEq(engine.getDiagnostics().activeStrikes, 4, 'exactly the cap keeps sounding');
+    engine.pause();
+    await sleep(400);
+    assertEq(engine.getDiagnostics().activeStrikes, 0, 'pause drains every strike voice');
   });
 
   await test('thunder gaps: skewed draws stay inside the configured window', async () => {
@@ -897,7 +966,7 @@ async function runTests(): Promise<void> {
     await atMin.play();
     const minHit = await until(
       () =>
-        elementFor(atMin, 'thunder-distant-rumble').playCalls >= 1 &&
+        strikeElementsFor(atMin, 'thunder-distant-rumble').length >= 1 &&
         atMin.getDiagnostics().pendingThunder,
       500
     );
@@ -913,7 +982,7 @@ async function runTests(): Promise<void> {
     await atMax.play();
     const maxHit = await until(
       () =>
-        elementFor(atMax, 'thunder-distant-rumble').playCalls >= 1 &&
+        strikeElementsFor(atMax, 'thunder-distant-rumble').length >= 1 &&
         atMax.getDiagnostics().pendingThunder,
       500
     );

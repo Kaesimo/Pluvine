@@ -54,7 +54,12 @@
  * File path (primary): each layer owns one HTMLAudioElement created in the
  * constructor and routed through createMediaElementSource() the first time the
  * context exists. Recordings stream (no full PCM in memory), loop layers use
- * el.loop, thunder layers are retriggered from 0 with a per-strike intensity.
+ * el.loop. Thunder strikes never touch the layer's main element (it stays
+ * parked as a readiness probe): every strike plays on its own throwaway
+ * element + gain node ("strike voice"). The rumble recordings are 20-40s
+ * long, so a scheduled strike routinely lands while the previous one is
+ * still sounding — restarting one shared element chopped the audible rumble
+ * (the stutter). Overlapping strike voices is also what a real storm does.
  *
  * Synth path (fallback): if a layer's recording fails (missing file, unsupported
  * format, network error, play() rejection), the engine marks the layer failed,
@@ -74,11 +79,14 @@
  *     a flat draw, never rarer), strikes can chain into rolling bursts a few
  *     seconds apart, and with both thunder layers enabled they alternate and
  *     occasionally pair near-simultaneously. The recordings themselves are
- *     never altered — every strike plays the file as recorded, from 0, with a
- *     random intensity.
+ *     never altered — every strike plays its file as recorded, from 0, with a
+ *     random intensity, on its own strike voice so overlapping rumbles are
+ *     never cut off (capped at MAX_CONCURRENT_STRIKES; the oldest voice is
+ *     faded out, never hard-stopped).
  *     Rescheduled only when it is absent or playback stops — moving a fader
  *     never restarts it. Cleared on pause, stop, and when no thunder layer is
- *     enabled; a cleared schedule also forgets any rolling burst.
+ *     enabled; a cleared schedule also forgets any rolling burst. Pause/stop/
+ *     destroy also fade out any strike voices still sounding.
  *   - sleepTimer   : a single setInterval owned by the engine (see below).
  *   - elementPause : one deferred timer that pauses elements *after* the gate
  *     has closed on pause/stop, guarded so a fast resume can't be clobbered.
@@ -126,6 +134,8 @@ export interface AssetFailure {
 const GAIN_SMOOTHING = 0.05; // seconds (setTargetAtTime τ)
 const GATE_FADE = 0.12; // pause/stop close time
 const VOICE_FADE = 0.12; // synth voice teardown time
+const STRIKE_FADE = 0.12; // strike-voice fade-out (cap eviction / pause / stop)
+const MAX_CONCURRENT_STRIKES = 4; // strike voices before the oldest is faded out
 const ELEMENT_PAUSE_DELAY = 220; // > GATE_FADE·3: elements pause behind a closed gate
 const DEFAULT_SLEEP_FADE = 60;
 
@@ -342,6 +352,19 @@ interface SynthVoice {
 }
 
 /**
+ * One thunder strike's throwaway playback rig: a dedicated element (never the
+ * layer's parked main element), its own MediaElementSource + gain so it can
+ * overlap other strikes and be faded out independently.
+ */
+interface StrikeVoice {
+  layerId: string;
+  el: HTMLAudioElement;
+  gain: GainNode;
+  srcNode: MediaElementAudioSourceNode;
+  done: boolean;
+}
+
+/**
  * Injectable timing, for tests only. Production code uses the defaults — the
  * engine must be exercisable deterministically (strike scheduling, the
  * sleep-timer countdown, deferred element pauses) without multi-second waits.
@@ -380,6 +403,10 @@ export class SoundEngine {
   private layers: SoundLayerConfig[] = DEFAULT_SOUND_LAYERS.map((l) => ({ ...l }));
   private runtime: Map<string, LayerRuntime> = new Map();
   private synthVoices: Map<string, SynthVoice> = new Map();
+  /** Live thunder strike voices (throwaway elements), capped and faded — never chopped. */
+  private strikeVoices: StrikeVoice[] = [];
+  /** Voices with a pending deferred dispose (mid-fade); destroy() force-disposes these. */
+  private retiringStrikeVoices = new Set<StrikeVoice>();
   private pinkNoise: AudioBuffer | null = null;
   private brownNoise: AudioBuffer | null = null;
   private synthContextReady = false;
@@ -506,6 +533,7 @@ export class SoundEngine {
     this.closeGate();
     this.retireAllSynthVoices();
     this.clearThunderTimer();
+    this.disposeAllStrikeVoices(VOICE_FADE);
     this.scheduleElementPause();
     this.setState('paused');
   }
@@ -520,6 +548,7 @@ export class SoundEngine {
     this.closeGate();
     this.retireAllSynthVoices();
     this.clearThunderTimer();
+    this.disposeAllStrikeVoices(VOICE_FADE);
     this.clearSleepTimer(/* restoreOutput */ false);
     this.scheduleElementPause();
     this.setState('stopped');
@@ -842,6 +871,7 @@ export class SoundEngine {
   private stopLayerSource(layerId: string, fade: number): void {
     const rt = this.runtime.get(layerId);
     this.retireSynthVoice(layerId, fade);
+    this.disposeLayerStrikeVoices(layerId, fade); // a disabled thunder layer fades its rumbles too
     if (!rt) return;
     // The layer gain ramps to 0 underneath; pause the element only after that
     // ramp has landed so the cut is inaudible.
@@ -1110,14 +1140,7 @@ export class SoundEngine {
 
     const rt = this.runtime.get(layer.id);
     if (rt && rt.status !== 'failed' && rt.el && rt.routed) {
-      const el = rt.el;
-      rt.pauseSeq++; // a strike is an intended play: cancel pending pauses
-      try {
-        el.currentTime = 0;
-      } catch { /* metadata not seekable yet */ }
-      el.volume = intensity;
-      const p = el.play();
-      if (p && typeof p.catch === 'function') p.catch(() => this.markAssetFailed(layer.id, 'playback was blocked'));
+      this.playStrikeVoice(layer, intensity);
       return;
     }
 
@@ -1177,6 +1200,145 @@ export class SoundEngine {
         },
         { once: true }
       );
+    }
+  }
+
+  // -- strike voices (file path) -------------------------------------------
+
+  /**
+   * Plays one strike on a throwaway element + gain node instead of restarting
+   * the layer's main element. The rumble recordings run 20-40s while base
+   * gaps are 18-42s and burst follow-ups only 2.5-6.5s apart, so a strike
+   * routinely lands while the previous one is still sounding — a shared
+   * element would hard-seek it back to 0 mid-rumble (the audible stutter).
+   * Overlapping voices also match what a real storm does. The concurrency cap
+   * keeps pathological schedules from piling up elements: the oldest voice is
+   * faded out, never hard-stopped.
+   */
+  private playStrikeVoice(layer: SoundLayerConfig, intensity: number): void {
+    if (!this.ctx || this.ctx.state === 'closed') return;
+    const file = LAYER_ASSETS[layer.id];
+    const layerGainNode = this.layerGain(layer.id);
+    if (!file || !layerGainNode) return;
+
+    while (this.strikeVoices.length >= MAX_CONCURRENT_STRIKES) {
+      const oldest = this.strikeVoices[0];
+      this.killStrikeVoice(oldest, STRIKE_FADE);
+    }
+
+    let el: HTMLAudioElement | null = null;
+    try {
+      el = document.createElement('audio');
+      el.preload = 'auto'; // a strike must sound immediately
+      el.loop = false;
+      el.src = ASSET_BASE + file;
+    } catch {
+      el = null;
+    }
+    if (!el) return;
+
+    const gain = this.ctx.createGain();
+    let srcNode: MediaElementAudioSourceNode;
+    try {
+      srcNode = this.ctx.createMediaElementSource(el);
+      srcNode.connect(gain);
+      gain.connect(layerGainNode);
+    } catch (err) {
+      try {
+        gain.disconnect();
+      } catch { /* already gone */ }
+      this.markAssetFailed(layer.id, describeError(err));
+      return;
+    }
+
+    el.volume = intensity;
+    const voice: StrikeVoice = { layerId: layer.id, el, gain, srcNode, done: false };
+    this.strikeVoices.push(voice);
+
+    el.addEventListener?.('ended', () => this.retireStrikeVoice(voice), { once: true });
+    el.addEventListener?.(
+      'error',
+      () => {
+        this.retireStrikeVoice(voice);
+        this.markAssetFailed(layer.id, 'recording could not be loaded');
+      },
+      { once: true }
+    );
+
+    const p = el.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {
+        this.retireStrikeVoice(voice);
+        this.markAssetFailed(layer.id, 'playback was blocked');
+      });
+    }
+  }
+
+  /** A strike voice ended naturally (or failed): drop it immediately. */
+  private retireStrikeVoice(voice: StrikeVoice): void {
+    if (voice.done) return;
+    this.killStrikeVoice(voice, 0);
+  }
+
+  /**
+   * Marks a strike voice dead, removes it from the live set, and disposes its
+   * element/nodes — after `fade` seconds of gain ramp when fade > 0, so a
+   * voice that is still sounding never hard-stops.
+   */
+  private killStrikeVoice(voice: StrikeVoice, fade: number): void {
+    if (voice.done) return;
+    voice.done = true;
+    const i = this.strikeVoices.indexOf(voice);
+    if (i >= 0) this.strikeVoices.splice(i, 1);
+
+    const ctx = this.ctx;
+    if (fade > 0 && ctx && ctx.state !== 'closed') {
+      const now = ctx.currentTime;
+      voice.gain.gain.cancelScheduledValues(now);
+      voice.gain.gain.setTargetAtTime(0, now, fade / 3);
+      this.retiringStrikeVoices.add(voice);
+      this.later(() => {
+        this.retiringStrikeVoices.delete(voice);
+        this.disposeStrikeVoice(voice);
+      }, fade * 1000 + 120);
+      return;
+    }
+    this.disposeStrikeVoice(voice);
+  }
+
+  /** Pauses the voice's element and releases its nodes. Idempotent. */
+  private disposeStrikeVoice(voice: StrikeVoice): void {
+    this.retiringStrikeVoices.delete(voice);
+    this.safeElementPause(voice.el);
+    try {
+      voice.el.removeAttribute?.('src');
+      voice.el.load?.();
+    } catch { /* teardown best effort */ }
+    try {
+      voice.srcNode.disconnect();
+    } catch { /* already gone */ }
+    try {
+      voice.gain.disconnect();
+    } catch { /* already gone */ }
+  }
+
+  /** Pause/stop/destroy: every strike still sounding fades out with them. */
+  private disposeAllStrikeVoices(fade: number): void {
+    for (const voice of this.strikeVoices.splice(0, this.strikeVoices.length)) {
+      this.killStrikeVoice(voice, fade);
+    }
+    // Voices already mid-fade: with fade 0 (destroy) dispose them now — their
+    // deferred timers are about to be cleared and would orphan the element.
+    if (fade <= 0) {
+      for (const voice of [...this.retiringStrikeVoices]) this.disposeStrikeVoice(voice);
+      this.retiringStrikeVoices.clear();
+    }
+  }
+
+  /** One layer disabled/stopped: only that layer's strike voices fade out. */
+  private disposeLayerStrikeVoices(layerId: string, fade: number): void {
+    for (const voice of [...this.strikeVoices]) {
+      if (voice.layerId === layerId) this.killStrikeVoice(voice, fade);
     }
   }
 
@@ -1336,6 +1498,8 @@ export class SoundEngine {
     nextThunderDelayMs: number | null;
     sleepRemaining: number;
     routedElements: number;
+    /** Live strike voices currently sounding (thunder overlap depth). */
+    activeStrikes: number;
     gateValue: number;
     sleepFactor: number;
     masterGainValue: number;
@@ -1363,12 +1527,23 @@ export class SoundEngine {
       nextThunderDelayMs: this.thunderDelayMs,
       sleepRemaining: this.getSleepTimerRemaining(),
       routedElements,
+      activeStrikes: this.strikeVoices.length + this.retiringStrikeVoices.size,
       gateValue: this.gateGain ? this.gateGain.gain.value : 1,
       sleepFactor: this.sleepGain ? this.sleepGain.gain.value : 1,
       masterGainValue: this.masterGain ? this.masterGain.gain.value : this.masterVolume,
       layerGainValues,
       sources,
     };
+  }
+
+  /**
+   * Live strike-voice elements (throwaway thunder playback rigs). For tests
+   * and e2e diagnostics only — the UI never touches elements directly. Strike
+   * voices are the only elements thunder plays, so this is how a verifier
+   * proves a strike actually played a real recording.
+   */
+  getStrikeElements(): HTMLAudioElement[] {
+    return [...this.strikeVoices, ...this.retiringStrikeVoices].map((v) => v.el);
   }
 
   // =========================================================================
@@ -1382,6 +1557,7 @@ export class SoundEngine {
 
     this.clearThunderTimer();
     this.clearSleepTimer(false);
+    this.disposeAllStrikeVoices(0); // immediate: the context is about to close
     if (this.elementPauseTimer !== null) {
       clearTimeout(this.elementPauseTimer);
       this.elementPauseTimer = null;
