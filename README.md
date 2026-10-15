@@ -1,7 +1,7 @@
 # Pluvine
 
 An ambient rain mixer. One dark instrument plate sits over an animated rain
-field: playback control, nine sound layers with individual levels, master
+field: playback control, ten sound layers with individual levels, master
 volume, presets, and a sleep timer — all on a single screen.
 
 ![stack](https://img.shields.io/badge/stack-React%2019%20%C2%B7%20Vite%208%20%C2%B7%20Web%20Audio-8dbdd2)
