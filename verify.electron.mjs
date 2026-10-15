@@ -42,7 +42,7 @@ const pageErrors = [];
 const consoleErrors = [];
 // The audio proof below fetches one real recording by name; if that exact
 // fetch ever 404s it must be reported, so exempt exactly that probe.
-const PROOF_PROBE = 'light-rain.mp3';
+const PROOF_PROBE = 'light-rain.opus';
 page.on('response', (r) => {
   if (r.status() >= 400 && !r.url().includes(PROOF_PROBE)) badResponses.push(`${r.status()} ${r.url()}`);
 });
@@ -89,11 +89,11 @@ check('click play → status "Playing"', true);
 // createMediaElementSource → AnalyserNode must carry real signal. Origin
 // mistakes here produce silence without any error, so assert on the data.
 const proof = await page.evaluate(async () => {
-  // Fetch one real recording (all runtime audio is 192k MP3 from sounds:sync)
+  // Fetch one real recording (runtime audio is Ogg Opus 96k from sounds:sync)
   // and prove the media → Web Audio path is live on the file://-free origin.
-  const res = await fetch('/sounds/light-rain.mp3');
+  const res = await fetch('/sounds/light-rain.opus');
   if (!res.ok) return { error: `fetch ${res.status}` };
-  const type = res.headers.get('content-type') ?? 'audio/mpeg';
+  const type = res.headers.get('content-type') ?? 'audio/ogg';
   const buf = await res.arrayBuffer();
   const el = document.createElement('audio');
   el.src = URL.createObjectURL(new Blob([buf], { type }));

@@ -49,6 +49,7 @@ const MIME = {
   '.mp3': 'audio/mpeg',
   '.ogg': 'audio/ogg',
   '.oga': 'audio/ogg',
+  '.opus': 'audio/ogg',
   '.m4a': 'audio/mp4',
 };
 

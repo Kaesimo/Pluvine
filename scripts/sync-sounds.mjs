@@ -1,25 +1,30 @@
 /**
  * sounds:sync — build the app's runtime audio from the user's recordings.
  *
- * Reads the labeled originals in ./sounds (never modified) and writes 192k
- * MP3 copies into ./public/sounds (the directory the app and every build
- * actually serve). One file per mixer layer; the two thunder one-shots are
- * already small/processed and live permanently in public/sounds untouched.
+ * Reads the labeled originals in ./sounds (never modified) and writes Ogg
+ * Opus 96k copies into ./public/sounds (the directory the app and every
+ * build actually serve). One file per mixer layer; the two thunder one-shots
+ * are already small/processed and live permanently in public/sounds untouched.
  *
- * Why 192k: the recordings are 320k MP3 (~8.2GB total). Rain/wind/AC are
- * noise-like content — MP3's best case — and 192k is transparent here while
- * cutting the shipped audio to ~60%. One quality generation is lost
- * (320k -> 192k re-encode); inaudible for this material, and the originals
- * stay in ./sounds so the step is always re-runnable.
+ * Why Opus 96k: rain/wind/AC are noise-like content, Opus's best case — at
+ * 96k it matches or beats MP3 192k perceptually while halving the bytes.
+ * Chromium/Firefox/Electron all play Ogg Opus natively (the loopback server
+ * maps .opus -> audio/ogg).
+ *
+ * Duration caps: the long recordings are cut to CAP_SECONDS so the loop
+ * wrap (and its brief head fade) returns at most a couple of times per
+ * night instead of once every 8-12h being the only option — 4h keeps wraps
+ * rare; recordings already shorter than the cap (wind, AC) are untouched.
+ * Set a layer's cap to 0 to keep the full recording.
  *
  * Metadata is stripped (-map_metadata -1): recordings often embed recorder
  * software fields we don't ship.
  *
  * Idempotent: a file whose output exists, is newer than its source, and is
- * already <= ~200kbps is skipped. --force re-encodes everything.
+ * already <= ~110kbps is skipped. --force re-encodes everything.
  * Encoding runs in parallel (one ffmpeg per file).
  *
- * Requires ffmpeg with libmp3lame (pacman -S ffmpeg).
+ * Requires ffmpeg with libopus (standard on Arch: pacman -S ffmpeg).
  */
 import { existsSync, statSync } from 'node:fs';
 import { execFile } from 'node:child_process';
@@ -32,20 +37,22 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const srcDir = join(root, 'sounds');
 const outDir = join(root, 'public', 'sounds');
 
-/** mixer layer id -> [source file in ./sounds, output name in public/sounds] */
+const CAP_SECONDS = 4 * 3600;
+
+/** mixer layer id -> [source file in ./sounds, output name, max seconds (0 = full)] */
 const LAYERS = [
-  ['rain-light-loop', 'Light rain.mp3', 'light-rain.mp3'],
-  ['rain-window-patter', 'Window rain.mp3', 'window-rain.mp3'],
-  ['rain-forest-loop', 'forest rain.mp3', 'forest-rain.mp3'],
-  ['rain-car-glass', 'car rain.mp3', 'car-rain.mp3'],
-  ['rain-ambient-gentle', 'Steady rain.mp3', 'steady-rain.mp3'],
-  ['rain-heavy-loop', 'Heavy rain.mp3', 'heavy-rain.mp3'],
-  ['wind-blowing-ambience', 'wind.mp3', 'wind.mp3'],
-  ['mechanical-air-conditioner', 'AC hum.mp3', 'ac-hum.mp3'],
+  ['rain-light-loop', 'Light rain.mp3', 'light-rain.opus', CAP_SECONDS],
+  ['rain-window-patter', 'Window rain.mp3', 'window-rain.opus', CAP_SECONDS],
+  ['rain-forest-loop', 'forest rain.mp3', 'forest-rain.opus', CAP_SECONDS],
+  ['rain-car-glass', 'car rain.mp3', 'car-rain.opus', CAP_SECONDS],
+  ['rain-ambient-gentle', 'Steady rain.mp3', 'steady-rain.opus', CAP_SECONDS],
+  ['rain-heavy-loop', 'Heavy rain.mp3', 'heavy-rain.opus', CAP_SECONDS],
+  ['wind-blowing-ambience', 'wind.mp3', 'wind.opus', 0],
+  ['mechanical-air-conditioner', 'AC hum.mp3', 'ac-hum.opus', 0],
 ];
 
-const TARGET_BITRATE = '192k';
-const MAX_ACCEPT_KBPS = 210; // outputs at or under this count as done
+const TARGET_BITRATE = '96k';
+const MAX_ACCEPT_KBPS = 110; // outputs at or under this count as done
 const FORCE = process.argv.includes('--force');
 
 async function ffprobe(file) {
@@ -61,60 +68,58 @@ async function ffprobe(file) {
 
 function isFresh(src, out) {
   if (!existsSync(out)) return false;
-  if (statSync(out).mtimeMs < statSync(src).mtimeMs) return false;
-  return true; // bitrate checked by caller via ffprobe
+  return statSync(out).mtimeMs >= statSync(src).mtimeMs;
 }
 
-async function encode(src, out) {
+async function encode(src, out, capSeconds) {
   await run('ffmpeg', [
     '-y', '-hide_banner', '-loglevel', 'error',
+    ...(capSeconds > 0 ? ['-t', String(capSeconds)] : []),
     '-i', src,
     '-map_metadata', '-1',
-    '-codec:a', 'libmp3lame', '-b:a', TARGET_BITRATE,
+    '-codec:a', 'libopus', '-b:a', TARGET_BITRATE,
     out,
   ]);
 }
 
-const jobs = [];
-for (const [layerId, srcName, outName] of LAYERS) {
+const jobs = LAYERS.map(([layerId, srcName, outName, cap]) => {
   const src = join(srcDir, srcName);
   const out = join(outDir, outName);
   if (!existsSync(src)) {
     console.error(`sounds:sync: missing source ${src}`);
     process.exit(1);
   }
-  jobs.push({ layerId, src, out });
-}
+  return { layerId, src, out, cap };
+});
 
 const results = await Promise.all(
-  jobs.map(async ({ layerId, src, out }) => {
+  jobs.map(async ({ layerId, src, out, cap }) => {
     const t0 = Date.now();
+    const srcInfo = await ffprobe(src);
+    const wantDuration = cap > 0 ? Math.min(srcInfo.duration, cap) : srcInfo.duration;
     if (!FORCE && isFresh(src, out)) {
-      const { kbps } = await ffprobe(out);
-      if (kbps <= MAX_ACCEPT_KBPS) {
-        return { layerId, out, skipped: true, src, secs: (Date.now() - t0) / 1000 };
+      const { kbps, duration } = await ffprobe(out);
+      if (kbps <= MAX_ACCEPT_KBPS && Math.abs(duration - wantDuration) <= 2.5) {
+        return { layerId, src, out, skipped: true, wantDuration, secs: (Date.now() - t0) / 1000 };
       }
     }
-    await encode(src, out);
-    const s = await ffprobe(src);
+    await encode(src, out, cap);
     const o = await ffprobe(out);
-    if (Math.abs(s.duration - o.duration) > 2.5) {
+    if (Math.abs(o.duration - wantDuration) > 2.5) {
       throw new Error(
-        `${outNameSafe(out)}: duration drifted ${s.duration.toFixed(1)}s -> ${o.duration.toFixed(1)}s`,
+        `${out.split('/').pop()}: duration ${o.duration.toFixed(1)}s, expected ${wantDuration.toFixed(1)}s`,
       );
     }
-    return { layerId, out, skipped: false, src, srcDur: s.duration, kbps: o.kbps, secs: (Date.now() - t0) / 1000 };
+    return { layerId, src, out, skipped: false, wantDuration, kbps: o.kbps, secs: (Date.now() - t0) / 1000 };
   }),
 );
-
-function outNameSafe(p) { return p.split('/').pop(); }
 
 const mb = (p) => (statSync(p).size / 1048576).toFixed(1);
 let inTotal = 0, outTotal = 0;
 for (const r of results) {
   inTotal += statSync(r.src).size;
   outTotal += statSync(r.out).size;
-  const dur = r.skipped ? 'up to date' : `${(r.srcDur / 3600).toFixed(1)}h @ ${r.kbps.toFixed(0)}kbps`;
+  const dur = r.skipped ? 'up to date' : `${(r.wantDuration / 3600).toFixed(1)}h @ ${r.kbps.toFixed(0)}kbps`;
   console.log(
     `  ${r.layerId.padEnd(26)} ${mb(r.src).padStart(7)}MB -> ${mb(r.out).padStart(7)}MB  ${dur}  (${r.secs.toFixed(0)}s)`,
   );

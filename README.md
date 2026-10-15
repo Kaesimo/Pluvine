@@ -83,9 +83,10 @@ test/soundEngine.test.ts   engine tests (mock Web Audio + DOM, no UI)
 ## Sound assets
 
 `npm run sounds:sync` builds the runtime audio: the original recordings in
-`sounds/` (kept untouched) are encoded to 192k MP3 into `public/sounds/`,
-where the app serves them from (streamed through media elements — no full
-decode in memory). The two thunder one-shots live in `public/sounds/`
+`sounds/` (kept untouched) are encoded to Ogg Opus 96k into `public/sounds/`
+(capped at 4 hours per layer so loop wraps stay rare) — the directory the
+app serves from, streamed through media elements with no full decode in
+memory. The two thunder one-shots live in `public/sounds/`
 permanently. The manifest lives in `src/utils/assets.ts`. If a recording is
 missing or fails to load, the engine says so (a notice appears under the
 mixer) and synthesizes that layer procedurally, so the mixer keeps working

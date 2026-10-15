@@ -10,26 +10,27 @@
 export const ASSET_BASE = `${import.meta.env?.BASE_URL ?? '/'}sounds/`;
 
 /**
- * Packaging builds set VITE_SOUND_EXT=mp3: the packaging step transcodes the
- * WAV recordings in dist/sounds/ to 192k MP3 (originals in public/sounds/
- * stay untouched) and this swaps the manifest's .wav entries to match.
- * Recordings that are already MP3 ship unchanged.
+ * All runtime recordings are Ogg Opus 96k, built by `npm run sounds:sync`
+ * from the originals in sounds/ (thunder one-shots are small MP3s). The
+ * packaging-time WAV swap below is a legacy safety net: it only rewrites
+ * .wav entries when a build ships WAV sources — with this manifest it is a
+ * no-op.
  */
 const PACKAGED_EXT: string = import.meta.env?.VITE_SOUND_EXT ?? 'wav';
 const resolveAsset = (file: string): string =>
   file.endsWith('.wav') ? `${file.slice(0, -4)}.${PACKAGED_EXT}` : file;
 
 const RAW_ASSETS: Record<string, string> = {
-  'rain-light-loop': 'light-rain.mp3',
-  'rain-window-patter': 'window-rain.mp3',
-  'rain-forest-loop': 'forest-rain.mp3',
-  'rain-car-glass': 'car-rain.mp3',
-  'rain-ambient-gentle': 'steady-rain.mp3',
-  'rain-heavy-loop': 'heavy-rain.mp3',
-  'wind-blowing-ambience': 'wind.mp3',
+  'rain-light-loop': 'light-rain.opus',
+  'rain-window-patter': 'window-rain.opus',
+  'rain-forest-loop': 'forest-rain.opus',
+  'rain-car-glass': 'car-rain.opus',
+  'rain-ambient-gentle': 'steady-rain.opus',
+  'rain-heavy-loop': 'heavy-rain.opus',
+  'wind-blowing-ambience': 'wind.opus',
   'thunder-distant-rumble': 'capaholiczsfx-distant-thunder-405128.mp3',
   'thunder-big-rumble': 'capaholiczsfx-heavy-thunder-405126.mp3',
-  'mechanical-air-conditioner': 'ac-hum.mp3',
+  'mechanical-air-conditioner': 'ac-hum.opus',
 };
 
 export const LAYER_ASSETS: Record<string, string> = Object.fromEntries(

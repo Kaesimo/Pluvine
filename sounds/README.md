@@ -2,8 +2,9 @@
 
 The app plays the user's own recordings — nothing here is downloaded or
 generated. This folder holds the **originals** (untouched source of truth);
-`npm run sounds:sync` encodes each into `public/sounds/` at 192k MP3, which
-is what the app and every build serve.
+`npm run sounds:sync` encodes each into `public/sounds/` at Ogg Opus 96k,
+capped at 4 hours per layer so loop wraps stay rare — that is what the app
+and every build serve.
 
 Files are excluded from git (they are 0.3–1.7 GB each — far beyond GitHub's
 100 MB limit). To run the app with sound, drop the recordings here with
@@ -23,7 +24,7 @@ these labels:
 Then:
 
 ```bash
-npm run sounds:sync   # encodes originals -> public/sounds/ (192k MP3)
+npm run sounds:sync   # encodes originals -> public/sounds/ (Ogg Opus 96k)
 npm run dev
 ```
 

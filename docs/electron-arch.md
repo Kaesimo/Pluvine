@@ -78,9 +78,9 @@ npm run dist:linux
 # release/pluvine-1.0.0.pacman     (~147 MB, bundles its own Chromium)
 #
 # Packaging builds run VITE_SOUND_EXT=mp3 + scripts/transcode-sounds.mjs:
-# all runtime audio is already 192k MP3 (built by npm run sounds:sync from
-# the originals in sounds/), so this step is a no-op safety net unless WAVs
-# appear in dist/sounds.
+# all runtime audio is already Ogg Opus 96k (built by npm run sounds:sync
+# from the originals in sounds/), so this step is a no-op safety net unless
+# WAVs appear in dist/sounds.
 ```
 
 ## 5. Arch packaging, two ways
