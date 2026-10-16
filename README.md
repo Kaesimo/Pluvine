@@ -47,15 +47,21 @@ npm run dist:linux   # → release/Pluvine-*.AppImage + release/pluvine-*.pacman
 npm run pack:arch    # → packaging/pluvine-<version>.tar.gz (input for the PKGBUILD)
 ```
 
-Two ways to install on Arch:
+Install on Arch — from this repo, no AUR account needed:
 
 ```bash
-# 1. electron-builder package (bundles its own Chromium)
-sudo pacman -U release/pluvine-1.0.2.pacman
+# 1. Arch-native package (uses the system electron package)
+#    packaging/aur-bin/PKGBUILD downloads the GitHub release tarball
+#    and checks its sha256 before building
+cd packaging/aur-bin && makepkg -si
 
-# 2. PKGBUILD in packaging/ (uses the system electron package)
-cd packaging && makepkg -si
+# 2. electron-builder package (bundles its own Chromium; build it first)
+npm run dist:linux
+sudo pacman -U release/pluvine-1.0.2.pacman
 ```
+
+The same package is prepared for the AUR as `pluvine-bin`
+(`packaging/aur-bin/`) but is not published there yet.
 
 The AppImage needs no installation:
 `chmod +x Pluvine-1.0.2.AppImage && ./Pluvine-1.0.2.AppImage`.
