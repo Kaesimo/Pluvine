@@ -18,7 +18,7 @@
 # tarball from it.
 
 pkgname=pluvine
-pkgver=1.0.2
+pkgver=1.0.3
 pkgrel=1
 pkgdesc="Ambient rain mixer: ten layered recordings, one window, no accounts"
 arch=('x86_64')

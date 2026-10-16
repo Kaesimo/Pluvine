@@ -9,7 +9,7 @@
 # in the source repo, produced by `npm run pack:arch`).
 
 pkgname=pluvine-bin
-pkgver=1.0.2
+pkgver=1.0.3
 pkgrel=1
 pkgdesc="Ambient rain mixer: ten layered recordings, one window, no accounts"
 arch=('x86_64')
@@ -22,7 +22,7 @@ depends=('electron')
 
 source=("$url/releases/download/v$pkgver/pluvine-$pkgver.tar.gz"
         "pluvine.desktop")
-sha256sums=('3562605d3e2696ef0725fd7eead2da2dcf9fcc53be781c0531d39e42f240277a'
+sha256sums=('2f0861ace519dde157b4d1567404414da1609f7071ffbb01adcdb9491d912f40'
             'ab9d2627602d104aef209d9e01d311fd9bda085d0941db0c287801c6d8071890')
 
 build() {
