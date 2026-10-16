@@ -1,0 +1,16 @@
+pkgbase = pluvine-bin
+	pkgdesc = Ambient rain mixer: ten layered recordings, one window, no accounts
+	pkgver = 1.0.2
+	pkgrel = 1
+	url = https://github.com/Kaesimo/Pluvine
+	arch = x86_64
+	license = LicenseRef-Proprietary
+	depends = electron
+	provides = pluvine
+	conflicts = pluvine
+	source = https://github.com/Kaesimo/Pluvine/releases/download/v1.0.2/pluvine-1.0.2.tar.gz
+	source = pluvine.desktop
+	sha256sums = 3562605d3e2696ef0725fd7eead2da2dcf9fcc53be781c0531d39e42f240277a
+	sha256sums = ab9d2627602d104aef209d9e01d311fd9bda085d0941db0c287801c6d8071890
+
+pkgname = pluvine-bin
