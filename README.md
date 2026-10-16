@@ -1,10 +1,11 @@
 # Pluvine
 
-An ambient rain mixer. One dark instrument plate sits over an animated rain
-field: playback control, ten sound layers with individual levels, master
-volume, presets, and a sleep timer — all on a single screen.
+A desktop ambient rain mixer. One window with ten sound layers — rain, wind,
+thunder, and air-conditioner hum — each with its own on/off switch and level.
+There are presets, a sleep timer, master volume, and lightning in the
+background. No accounts, no streaming, no internet connection needed.
 
-![stack](https://img.shields.io/badge/stack-React%2019%20%C2%B7%20Vite%208%20%C2%B7%20Web%20Audio-8dbdd2)
+![Pluvine](docs/shots/state-playing.png)
 
 ## Run
 
@@ -13,7 +14,7 @@ npm install
 npm run dev        # http://localhost:3000
 ```
 
-Production:
+Production build:
 
 ```bash
 npm run build
@@ -23,39 +24,41 @@ npm start          # serves dist/
 ## Checks
 
 ```bash
-npm run lint       # tsc --noEmit
-npm test           # engine test suite (26 tests, 169 assertions)
-npm run build      # production bundle
-node verify.browser.mjs    # 68 in-browser checks (needs playwright, see script header)
-node verify.electron.mjs   # 24 checks inside real Electron
+npm run lint                 # TypeScript check (tsc --noEmit)
+npm test                     # engine tests: 30 tests, 197 assertions
+npm run build                # production bundle
+node verify.browser.mjs      # 84 checks in Firefox (needs Playwright)
+node verify.electron.mjs     # 24 checks in the packaged Electron app
 ```
+
+The test suites are silent by default. Set `PLUVINE_E2E_AUDIBLE=1` to hear
+them while they run.
 
 ## Desktop app (Electron)
 
-Pluvine also runs as a Linux desktop app. The Electron main process
-(`electron/main.cjs`) serves `dist/` from a loopback-only origin — page and
-sounds same-origin, so Web Audio stays unblocked — and opens a window on it.
-The full walkthrough, including every gotcha hit on the way, is in
-`docs/electron-arch.md`.
+Pluvine runs as a Linux desktop app. `electron/main.cjs` serves `dist/` from
+a local-only address (the page and the recordings are same-origin, so the
+browser does not block Web Audio) and opens a window on it. The full
+walkthrough is in `docs/electron-arch.md`.
 
 ```bash
 npm run electron     # build + run the desktop app
 npm run dist:linux   # → release/Pluvine-*.AppImage + release/pluvine-*.pacman
-npm run pack:arch    # → packaging/pluvine-<version>.tar.gz (for the PKGBUILD)
+npm run pack:arch    # → packaging/pluvine-<version>.tar.gz (input for the PKGBUILD)
 ```
 
 Two ways to install on Arch:
 
 ```bash
-# 1. self-contained package from electron-builder (bundles its own Chromium)
+# 1. electron-builder package (bundles its own Chromium)
 sudo pacman -U release/pluvine-1.0.2.pacman
 
-# 2. Arch-native PKGBUILD: uses the SYSTEM electron package
-#    (pacman -S electron provides updates for every Electron app at once)
+# 2. PKGBUILD in packaging/ (uses the system electron package)
 cd packaging && makepkg -si
 ```
 
-The AppImage needs no installation: `chmod +x Pluvine-1.0.2.AppImage && ./Pluvine-1.0.2.AppImage`.
+The AppImage needs no installation:
+`chmod +x Pluvine-1.0.2.AppImage && ./Pluvine-1.0.2.AppImage`.
 
 To run the Electron checks against a packaged build:
 
@@ -70,36 +73,38 @@ src/
   App.tsx                  screen wiring; mirrors engine state, renders controls
   components/              RainField · Transport · Mixer · PresetBar ·
                            SleepTimer · SaveMixDialog · icons
-  index.css                design system (palette, type, fader/button styles)
+  index.css                palette, type, fader and button styles
   types/soundscape.ts      layer + preset definitions (single source of truth)
   utils/soundEngine.ts     the audio engine — see docs/audio-engine.md
   utils/assets.ts          layer id → recording file manifest
   utils/presets.ts         custom preset + master volume persistence
-public/sounds/             the runtime recordings each layer plays (built)
-sounds/                    the user's original recordings (source, untouched)
-test/soundEngine.test.ts   engine tests (mock Web Audio + DOM, no UI)
+public/sounds/             the recordings the app plays (built, not in git)
+sounds/                    the original recordings (source, not in git)
+test/soundEngine.test.ts   engine tests (no UI, no real audio device)
 ```
 
 ## Sound assets
 
-`npm run sounds:sync` builds the runtime audio: the original recordings in
-`sounds/` (kept untouched) are encoded to Ogg Opus 96k into `public/sounds/`
-(capped at 4 hours per layer so loop wraps stay rare) — the directory the
-app serves from, streamed through media elements with no full decode in
-memory. The two thunder one-shots live in `public/sounds/`
-permanently. The manifest lives in `src/utils/assets.ts`. If a recording is
-missing or fails to load, the engine says so (a notice appears under the
-mixer) and synthesizes that layer procedurally, so the mixer keeps working
-offline.
+The recordings are not stored in this repository (each long one is over
+1 GB, far beyond the git limit). `npm run sounds:sync` encodes the originals
+from `sounds/` into `public/sounds/` as Ogg Opus 96k, capped at 4 hours per
+layer; the two thunder recordings go through the same command. The file
+`sounds/README.md` lists the expected file names.
+
+If a recording is missing or fails to load, the engine shows a notice under
+the mixer and synthesizes that layer instead, so the app keeps working.
 
 ## Design notes
 
-- One accent (pale rain blue) marks active sound; brass marks the sleep timer
-  only; red marks errors only. No gradients, glass, or decorative cards.
-- The mixer is a bank of gauge columns: the fader fill is the real level.
-  Faders are standard range inputs rotated −90°, so keyboard, touch, and
-  screen-reader behavior stay native.
-- `prefers-reduced-motion` paints a single static rain frame (no motion, no
-  lightning animation).
-- Manual pause/stop is final: returning to a visible tab never restarts
+- One accent color (pale blue) marks active sound, brass marks the sleep
+  timer, red marks errors. No gradients or glass effects.
+- Each layer is a vertical fader; the fill shows the current level. Faders
+  are standard range inputs turned on their side, so keyboard, touch, and
+  screen readers work normally.
+- With `prefers-reduced-motion` the rain is drawn as a single still frame.
+- Pause and stop are final: coming back to a visible tab never restarts the
   audio (see `docs/audio-engine.md`).
+
+## License
+
+No license file is shipped. The package metadata uses `LicenseRef-Proprietary`.

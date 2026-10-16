@@ -2,7 +2,7 @@
 Type=Application
 Name=Pluvine
 GenericName=Ambient rain mixer
-Comment=Layer and mix nine rain recordings into a custom soundscape
+Comment=Layer and mix ten rain recordings into a custom soundscape
 Exec=pluvine
 Icon=pluvine
 Terminal=false

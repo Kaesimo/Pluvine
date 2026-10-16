@@ -7,7 +7,7 @@
     "name": "Kaesimo",
     "email": "kaesimo@localhost"
   },
-  "homepage": "https://github.com/Kaesimo/Rainfocus",
+  "homepage": "https://github.com/Kaesimo/Pluvine",
   "type": "module",
   "main": "electron/main.cjs",
   "scripts": {

@@ -22,7 +22,7 @@ pkgver=1.0.2
 pkgrel=1
 pkgdesc="Ambient rain mixer: ten layered recordings, one window, no accounts"
 arch=('x86_64')
-url="https://github.com/Kaesimo/Rainfocus"
+url="https://github.com/Kaesimo/Pluvine"
 license=('LicenseRef-Proprietary')      # ← project ships no LICENSE yet; pick one
 depends=('electron')
 # options: none needed — the payload is pure JS/CSS/HTML/audio, no ELF binaries.
