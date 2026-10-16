@@ -51,8 +51,11 @@ first time the context exists. Streaming means no full PCM ever sits in
 memory.
 
 - **file path (primary):** loop layers set `el.loop` and are (re)started by
-  reconciliation; thunder layers are one-shots retriggered from `currentTime = 0`
-  with a per-strike intensity in `el.volume`.
+  reconciliation — the distant thunder bed loops its long recording, so wraps
+  stay hours apart. Strike layers (heavy thunder) keep their main element
+  parked as a readiness probe; every strike plays on a throwaway voice,
+  retriggered from `currentTime = 0`, with a per-strike intensity in
+  `el.volume` and a short attack fade.
 - **synth path (fallback):** if a recording fails (missing file, decode/`error`
   event, `play()` rejection), the engine marks the layer `failed`, reports it
   via `onAssetStatusesChange`/`getAssetFailures()` — a notice appears in the
@@ -83,15 +86,16 @@ All timers are stored ids, all cleared on `destroy()`:
 
 | timer | purpose | cancellation |
 |-------|---------|--------------|
-| `thunderTimer` | next strike: quick 3–6 s after playback starts, then every 18–42 s | cleared on pause/stop and when no thunder layer is enabled; kept (never restarted) across fader moves |
+| `thunderTimer` | next strike: quick 3–6 s after playback starts (and when a strike layer enables), then every 18–42 s | cleared on pause/stop and when no strike layer is enabled; kept (never restarted) across fader moves |
 | `sleepInterval` | 1 Hz countdown | cleared by expiry, manual stop, or cancel |
 | `elementPauseTimer` | pauses elements once the gate has closed | skipped if playback resumed first |
 | per-layer pause (`pauseSeq`) | deferred element pause behind the layer-gain ramp | any intended play bumps `pauseSeq`, making stale pauses no-ops |
 | transient cleanup (voice teardown, strike nodes) | exhaustive node disconnect | `destroy()` clears all |
 
-Intermittent (thunder) layers are only ever triggered by the scheduler —
-reconcile deliberately does not start them, so a fader nudge can never
-re-trigger a finished thunder recording.
+Intermittent layers (currently heavy thunder) are only ever triggered by the
+scheduler — reconcile deliberately does not start them, so a fader nudge can
+never re-trigger a finished strike recording. The distant thunder bed loops
+continuously while its layer is enabled.
 
 ## Sleep timer
 

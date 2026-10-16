@@ -157,11 +157,11 @@ The AppImage is the third option: no installation, no integration.
    "Open sleep timer"; and a stray click closed the timer popover before the
    test clicked its Cancel button. All three fixed in the test.
 9. **A knife-edge timing assertion in the web suite** (`playingElements === 3`
-   right after switching to Night storm): thunder layers are *intermittent* —
-   the strike scheduler (3–6 s random first strike, armed at playback start)
-   can begin a strike inside the sampling window, making the count 4. The
-   app was always correct; the test now asserts the three continuous layers
-   carry signal and that the thunder layer is enabled, instead of pinning a
+   right after switching to Night storm): thunder was *intermittent* — the
+   strike scheduler (3–6 s random first strike, armed at playback start)
+   could begin a strike inside the sampling window, making the count 4. The
+   app was always correct; the test now asserts the continuous layers carry
+   signal and that the thunder layer is enabled, instead of pinning a
    momentary count. Found by dumping per-element runtime state via the dev
    handle (`paused`, `currentTime`, gains per layer).
 10. **A missing dot in the transcode manifest swap**: `resolveAsset` built

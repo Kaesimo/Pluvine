@@ -22,7 +22,8 @@ packaging/aur-bin/*.pkg.tar.zst
 /sounds/*
 !/sounds/README.md
 
-# runtime audio built from sounds/ (the two small thunder one-shots stay
-# tracked so a fresh clone runs out of the box)
+# runtime audio built from sounds/ (only the small heavy-thunder one-shot
+# stays tracked — the distant thunder bed is a 102 MB file, past GitHub's
+# 100 MB limit; everything else needs `npm run sounds:sync`)
 public/sounds/*
-!public/sounds/*-thunder.opus
+!public/sounds/heavy-thunder.opus

@@ -32,26 +32,32 @@
 
 class MockAudioParam {
   value: number;
+  calls: Array<{ method: string; args: number[] }> = [];
   constructor(initial = 0) {
     this.value = initial;
   }
   setValueAtTime(val: number) {
     this.value = val;
+    this.calls.push({ method: 'setValueAtTime', args: [val] });
     return this;
   }
   setTargetAtTime(val: number) {
     this.value = val;
+    this.calls.push({ method: 'setTargetAtTime', args: [val] });
     return this;
   }
   exponentialRampToValueAtTime(val: number) {
     this.value = val;
+    this.calls.push({ method: 'exponentialRampToValueAtTime', args: [val] });
     return this;
   }
   linearRampToValueAtTime(val: number) {
     this.value = val;
+    this.calls.push({ method: 'linearRampToValueAtTime', args: [val] });
     return this;
   }
   cancelScheduledValues() {
+    this.calls.push({ method: 'cancelScheduledValues', args: [] });
     return this;
   }
 }
@@ -68,7 +74,12 @@ class MockAudioNode {
 }
 
 class MockGainNode extends MockAudioNode {
+  static instances: MockGainNode[] = [];
   gain = new MockAudioParam(1);
+  constructor() {
+    super();
+    MockGainNode.instances.push(this);
+  }
 }
 
 class MockBiquadFilterNode extends MockAudioNode {
@@ -390,6 +401,16 @@ function makeEngine(
   return engine;
 }
 
+/** Engine with heavy thunder (the strike layer) enabled; the distant thunder
+ *  bed loops, so it is never a strike candidate. */
+function makeEngineWithStrike(
+  extra: Partial<ConstructorParameters<typeof SoundEngine>[0]> = {}
+): Engine {
+  const engine = makeEngine(extra);
+  engine.setLayerEnabled('thunder-big-rumble', true);
+  return engine;
+}
+
 /** The recording elements created by a given engine (constructor order). */
 function engineElements(engine: Engine): MockAudioElement[] {
   const base = elementBases.get(engine) ?? 0;
@@ -476,8 +497,13 @@ async function runTests(): Promise<void> {
     );
     assertEq(
       elementFor(engine, 'thunder-distant-rumble').loop,
+      true,
+      'the distant thunder bed loops'
+    );
+    assertEq(
+      elementFor(engine, 'thunder-big-rumble').loop,
       false,
-      'thunder layers play as one-shots'
+      'the strike layer plays as one-shots'
     );
     assertEq(engine.getAssetStatuses()['rain-light-loop'], 'loading', 'assets start loading');
   });
@@ -494,7 +520,7 @@ async function runTests(): Promise<void> {
     assertEq(states.join('>'), 'starting>playing', 'state callbacks saw starting > playing');
     assertEq(diag.routedElements, 10, 'all ten elements routed through the graph');
     assertEq(diag.gateValue, 1, 'playback gate is open');
-    assertEq(diag.playingElements, 1, 'only the enabled loop layer is running');
+    assertEq(diag.playingElements, 2, 'light rain and the distant thunder bed are running');
     assertEq(diag.synthVoices, 0, 'healthy files use the file path, no synth voices');
     assertEq(
       diag.layerGainValues['rain-light-loop'],
@@ -513,11 +539,12 @@ async function runTests(): Promise<void> {
     const light = elementFor(engine, 'rain-light-loop');
     assertEq(light.playCalls, 1, 'three play() calls start the element exactly once');
     assertEq(engine.getState(), 'playing', 'still playing, no error');
-    assertEq(engine.getDiagnostics().playingElements, 1, 'still exactly one running element');
+    assertEq(engine.getDiagnostics().playingElements, 2, 'still exactly two running elements (light + distant bed)');
   });
 
   await test('pause closes the gate and stops elements behind it', async () => {
     const engine = makeEngine();
+    engine.setLayerEnabled('thunder-big-rumble', true);
     await engine.play();
     engine.pause();
 
@@ -545,7 +572,7 @@ async function runTests(): Promise<void> {
     const diag = engine.getDiagnostics();
     assertEq(engine.getState(), 'playing', 'resume returns to playing');
     assertEq(diag.gateValue, 1, 'gate re-opened');
-    assertEq(diag.playingElements, 1, 'the enabled loop layer runs again');
+    assertEq(diag.playingElements, 2, 'the enabled loop layers run again');
     const light = elementFor(engine, 'rain-light-loop');
     assertEq(light.playCalls, 2, 'exactly one additional element start after resume');
     assertEq(diag.synthVoices, 0, 'no stray synth voices after resume');
@@ -570,6 +597,7 @@ async function runTests(): Promise<void> {
 
   await test('INVARIANT: returning to a visible tab after manual STOP never restarts audio', async () => {
     const engine = makeEngine();
+    engine.setLayerEnabled('thunder-big-rumble', true);
     await engine.play();
     engine.stop();
     await sleep(60);
@@ -594,7 +622,7 @@ async function runTests(): Promise<void> {
     await sleep(20);
     assertEq(ctx.state, 'running', 'suspended context resumed on tab return');
     assertEq(engine.getState(), 'playing', 'playback continues');
-    assertEq(engine.getDiagnostics().playingElements, 1, 'voices still running');
+    assertEq(engine.getDiagnostics().playingElements, 2, 'voices still running');
   });
 
   await test('INVARIANT: pause issued during an in-flight play() wins the race', async () => {
@@ -628,7 +656,7 @@ async function runTests(): Promise<void> {
     await engine.play();
 
     engine.setLayerEnabled('rain-window-patter', true);
-    assertEq(engine.getDiagnostics().playingElements, 2, 'enabling a loop layer starts it');
+    assertEq(engine.getDiagnostics().playingElements, 3, 'enabling a loop layer starts it');
     assertClose(
       engine.getDiagnostics().layerGainValues['rain-window-patter'],
       0.5,
@@ -648,11 +676,11 @@ async function runTests(): Promise<void> {
       true,
       'disabled layer element paused after the gain ramp'
     );
-    assertEq(engine.getDiagnostics().playingElements, 1, 'only window rain keeps running');
+    assertEq(engine.getDiagnostics().playingElements, 2, 'window rain and the distant bed keep running');
 
     engine.setLayerEnabled('rain-light-loop', true);
     await sleep(10);
-    assertEq(engine.getDiagnostics().playingElements, 2, 're-enabling restarts the layer');
+    assertEq(engine.getDiagnostics().playingElements, 3, 're-enabling restarts the layer');
     assertEq(elementFor(engine, 'rain-light-loop').playCalls, 2, 'restart is exactly one start');
     assertEq(engine.getState(), 'playing', 'playback uninterrupted by toggles');
   });
@@ -702,13 +730,18 @@ async function runTests(): Promise<void> {
 
     await sleep(80);
     const after = engine.getDiagnostics();
-    assertEq(after.playingElements, 2, 'car + wind loops are running (forest is off)');
+    assertEq(after.playingElements, 3, 'car + wind + the distant thunder bed are running (forest is off)');
     assertEq(elementFor(engine, 'rain-light-loop').paused, true, 'previously playing layer stopped');
     assertEq(elementFor(engine, 'rain-window-patter').paused, true, 'other default layer stopped');
     assertEq(
       elementFor(engine, 'thunder-distant-rumble').paused,
+      false,
+      'the distant thunder bed keeps looping under the preset'
+    );
+    assertEq(
+      elementFor(engine, 'thunder-big-rumble').paused,
       true,
-      'intermittent layers wait for the scheduler (reconcile does not retrigger thunder)'
+      'the strike layer waits for the scheduler (reconcile does not retrigger thunder)'
     );
 
     // Apply a preset that disables everything: sources all stop, no residue.
@@ -732,7 +765,7 @@ async function runTests(): Promise<void> {
     let statusNotifications = 0;
     engine.setOnAssetStatusesChange(() => statusNotifications++);
 
-    engine.setLayerEnabled('rain-window-patter', true); // the second enabled loop layer
+    engine.setLayerEnabled('rain-window-patter', true); // another loop layer (the distant bed counts as one too)
     elementFor(engine, 'rain-window-patter').fire('error');
     assertEq(engine.getAssetFailures().length, 1, 'failure recorded');
     assertEq(engine.getAssetFailures()[0].layerId, 'rain-window-patter', 'failure names the layer');
@@ -748,7 +781,7 @@ async function runTests(): Promise<void> {
     assertEq(diag.synthVoices, 1, 'failed layer falls back to exactly one synth voice');
     assertEq(diag.sources['rain-window-patter'], 'synth', 'fallback layer uses synth path');
     assertEq(diag.sources['rain-light-loop'], 'file', 'healthy layer stays on the file path');
-    assertEq(diag.playingElements, 1, 'healthy file layer still running');
+    assertEq(diag.playingElements, 2, 'healthy file layers still running');
     assertEq(engine.getState(), 'playing', 'engine plays normally despite the failure');
   });
 
@@ -797,7 +830,7 @@ async function runTests(): Promise<void> {
   });
 
   await test('thunder scheduler: schedules, strikes, and cancels on pause', async () => {
-    const engine = makeEngine({ quickStrikeDelay: [10, 20] });
+    const engine = makeEngineWithStrike({ quickStrikeDelay: [10, 20] });
     let strikes = 0;
     engine.setOnThunderStrike(() => strikes++);
 
@@ -805,20 +838,39 @@ async function runTests(): Promise<void> {
     await engine.play();
     assertEq(engine.getDiagnostics().pendingThunder, true, 'scheduler armed at playback start');
 
+    const gainsBefore = MockGainNode.instances.length;
     const hit = await until(() => strikes >= 1, 1000);
     assert(hit, 'first strike fired within the quick window');
-    const voices = strikeElementsFor(engine, 'thunder-distant-rumble');
+    const voices = strikeElementsFor(engine, 'thunder-big-rumble');
     assertEq(voices.length, 1, 'the strike plays on its own throwaway element');
     assertEq(voices[0].playCalls, 1, 'the strike voice played once');
     assertEq(voices[0].currentTime, 0, 'strike starts from the beginning');
     assert(
-      voices[0].volume >= 0.35 && voices[0].volume <= 0.6,
-      `strike intensity within the distant-thunder profile (${voices[0].volume.toFixed(2)})`
+      voices[0].volume >= 0.65 && voices[0].volume <= 1,
+      `strike intensity within the heavy-thunder profile (${voices[0].volume.toFixed(2)})`
+    );
+    const strikeGains = MockGainNode.instances.slice(gainsBefore);
+    assertEq(strikeGains.length, 1, 'the strike created exactly one gain node');
+    const attack = strikeGains[0].gain.calls;
+    assertEq(attack[0]?.method, 'setValueAtTime', 'strike attack opens with setValueAtTime');
+    assertEq(attack[0]?.args[0], 0, 'strike starts silent');
+    assert(
+      attack.some((c) => c.method === 'linearRampToValueAtTime' && c.args[0] === 1),
+      'strike fades in to full voice gain (no abrupt jump)'
+    );
+    assertEq(
+      elementFor(engine, 'thunder-big-rumble').playCalls,
+      0,
+      'the parked strike layer main element is never touched by strikes'
     );
     assertEq(
       elementFor(engine, 'thunder-distant-rumble').playCalls,
-      0,
-      'the parked main element is never touched by strikes'
+      1,
+      'the distant thunder bed started as a loop'
+    );
+    assert(
+      elementFor(engine, 'thunder-distant-rumble').loop === true,
+      'the bed element loops'
     );
     assertEq(engine.getDiagnostics().activeStrikes, 1, 'one strike voice is sounding');
     assertEq(engine.getState(), 'playing', 'a strike never disrupts playback state');
@@ -832,15 +884,15 @@ async function runTests(): Promise<void> {
     await engine.resume();
     assertEq(engine.getDiagnostics().pendingThunder, true, 'resume re-arms the scheduler');
     const strikesBefore = strikes;
-    engine.setLayerEnabled('thunder-distant-rumble', false);
+    engine.setLayerEnabled('thunder-big-rumble', false);
     await sleep(60);
-    assertEq(engine.getDiagnostics().pendingThunder, false, 'disabling the thunder layer cancels it');
+    assertEq(engine.getDiagnostics().pendingThunder, false, 'disabling the strike layer cancels the schedule');
     assertEq(strikes, strikesBefore, 'no strike after cancellation');
   });
 
   await test('thunder strike falls back to synthesis when the recording failed', async () => {
-    const engine = makeEngine({ quickStrikeDelay: [10, 20] });
-    elementFor(engine, 'thunder-distant-rumble').fire('error');
+    const engine = makeEngineWithStrike({ quickStrikeDelay: [10, 20] });
+    elementFor(engine, 'thunder-big-rumble').fire('error');
     let strikes = 0;
     engine.setOnThunderStrike(() => strikes++);
 
@@ -853,9 +905,9 @@ async function runTests(): Promise<void> {
       ctx.oscillatorCount > oscillatorsBefore,
       'synthesized strike created its oscillator voice'
     );
-    assertEq(elementFor(engine, 'thunder-distant-rumble').playCalls, 0, 'failed file never plays');
+    assertEq(elementFor(engine, 'thunder-big-rumble').playCalls, 0, 'failed file never plays');
     assertEq(
-      strikeElementsFor(engine, 'thunder-distant-rumble').length,
+      strikeElementsFor(engine, 'thunder-big-rumble').length,
       0,
       'a failed recording never spawns strike voices'
     );
@@ -866,7 +918,7 @@ async function runTests(): Promise<void> {
     // Scripted randomness documents the exact rng draw order:
     // [quick, pick, burst-roll, size, gap, pick, gap, pick, gap, pick, roll, base]
     const draws = [0, 0, 0.1, 0.99, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1, 1];
-    const engine = makeEngine({
+    const engine = makeEngineWithStrike({
       quickStrikeDelay: [10, 20],
       burstDelay: [10, 20],
       rng: () => draws.shift() ?? 1,
@@ -877,7 +929,7 @@ async function runTests(): Promise<void> {
     await engine.play();
     const burst = await until(() => strikes >= 4, 1000);
     assert(burst, `primary + 3 burst follow-ups fired quickly (got ${strikes})`);
-    const voices = strikeElementsFor(engine, 'thunder-distant-rumble');
+    const voices = strikeElementsFor(engine, 'thunder-big-rumble');
     assert(
       voices.length >= 4,
       `each burst member got its own strike voice (got ${voices.length})`
@@ -904,37 +956,12 @@ async function runTests(): Promise<void> {
     assertEq(strikes, afterPause, 'no strike sneaks in after the pause');
   });
 
-  await test('thunder pairing: one moment can fire both thunder layers', async () => {
-    // [quick, pick, pair-roll -> pair, burst-roll -> none, base]
-    const draws = [0, 0, 0.1, 1, 1];
-    const engine = makeEngine({
-      quickStrikeDelay: [10, 20],
-      rng: () => draws.shift() ?? 1,
-    });
-    engine.setLayerEnabled('thunder-big-rumble', true);
-    await engine.play();
-
-    const paired = await until(
-      () =>
-        strikeElementsFor(engine, 'thunder-distant-rumble').length >= 1 &&
-        strikeElementsFor(engine, 'thunder-big-rumble').length >= 1,
-      1000
-    );
-    assert(paired, 'the paired moment played BOTH thunder recordings');
-    const heavyVoice = strikeElementsFor(engine, 'thunder-big-rumble')[0];
-    assert(
-      heavyVoice.volume >= 0.65 && heavyVoice.volume <= 1,
-      `paired strike used the heavy profile (${heavyVoice.volume.toFixed(2)})`
-    );
-    engine.pause();
-  });
-
   await test('thunder cap: too many overlapping strikes fade the oldest, never pile up', async () => {
     // Draw order (single thunder layer, no pair draw):
     // quick, pick, burst-roll, size(3), gap, pick, gap, pick, gap, pick,
     // burst-roll2, size2(1), gap, pick → 5 strikes total.
     const draws = [0, 0, 0.1, 0.99, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 0.1, 0, 0.5, 0.5];
-    const engine = makeEngine({
+    const engine = makeEngineWithStrike({
       quickStrikeDelay: [10, 20],
       burstDelay: [10, 20],
       rng: () => draws.shift() ?? 1,
@@ -945,7 +972,7 @@ async function runTests(): Promise<void> {
     await engine.play();
     const five = await until(() => strikes >= 5, 1000);
     assert(five, `five strikes fired quickly (got ${strikes})`);
-    const voices = strikeElementsFor(engine, 'thunder-distant-rumble');
+    const voices = strikeElementsFor(engine, 'thunder-big-rumble');
     assertEq(voices.length, 5, 'five strike voices were created');
     assert(!voices[4].paused, 'the newest voice is sounding');
 
@@ -958,7 +985,7 @@ async function runTests(): Promise<void> {
   });
 
   await test('thunder gaps: skewed draws stay inside the configured window', async () => {
-    const atMin = makeEngine({
+    const atMin = makeEngineWithStrike({
       quickStrikeDelay: [10, 20],
       strikeDelay: [18000, 42000],
       rng: (() => { const d = [0, 0, 1, 0]; return () => d.shift() ?? 1; })(),
@@ -966,7 +993,7 @@ async function runTests(): Promise<void> {
     await atMin.play();
     const minHit = await until(
       () =>
-        strikeElementsFor(atMin, 'thunder-distant-rumble').length >= 1 &&
+        strikeElementsFor(atMin, 'thunder-big-rumble').length >= 1 &&
         atMin.getDiagnostics().pendingThunder,
       500
     );
@@ -974,7 +1001,7 @@ async function runTests(): Promise<void> {
     assertEq(atMin.getDiagnostics().nextThunderDelayMs, 18000, 'skew 0 -> exactly the window min');
     atMin.pause();
 
-    const atMax = makeEngine({
+    const atMax = makeEngineWithStrike({
       quickStrikeDelay: [10, 20],
       strikeDelay: [18000, 42000],
       rng: (() => { const d = [0, 0, 1, 1]; return () => d.shift() ?? 1; })(),
@@ -982,7 +1009,7 @@ async function runTests(): Promise<void> {
     await atMax.play();
     const maxHit = await until(
       () =>
-        strikeElementsFor(atMax, 'thunder-distant-rumble').length >= 1 &&
+        strikeElementsFor(atMax, 'thunder-big-rumble').length >= 1 &&
         atMax.getDiagnostics().pendingThunder,
       500
     );
@@ -993,6 +1020,7 @@ async function runTests(): Promise<void> {
 
   await test('sleep timer: auto-starts playback, fades, expires to stop', async () => {
     const engine = makeEngine();
+    engine.setLayerEnabled('thunder-big-rumble', true);
     let reported = -1;
     engine.setOnSleepTimerChange((remaining) => (reported = remaining));
 
@@ -1057,6 +1085,7 @@ async function runTests(): Promise<void> {
 
   await test('repeated lifecycle stress: no duplicates, no residue', async () => {
     const engine = makeEngine();
+    engine.setLayerEnabled('thunder-big-rumble', true);
     for (let i = 0; i < 12; i++) {
       await engine.play();
       engine.pause();

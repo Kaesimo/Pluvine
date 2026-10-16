@@ -51,7 +51,7 @@ const LAYERS = [
   ['rain-heavy-loop', 'Heavy rain.mp3', 'heavy-rain.opus', CAP_SECONDS],
   ['wind-blowing-ambience', 'wind.mp3', 'wind.opus', 0],
   ['mechanical-air-conditioner', 'AC hum.mp3', 'ac-hum.opus', 0],
-  ['thunder-distant-rumble', 'capaholiczsfx-distant-thunder-405128.mp3', 'distant-thunder.opus', 0],
+  ['thunder-distant-rumble', 'distant-thunder.mp3', 'distant-thunder.opus', 0],
   ['thunder-big-rumble', 'capaholiczsfx-heavy-thunder-405126.mp3', 'heavy-thunder.opus', 0],
 ];
 

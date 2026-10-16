@@ -87,7 +87,7 @@ export const DEFAULT_SOUND_LAYERS: SoundLayerConfig[] = [
     name: 'Distant thunder',
     enabled: true,
     volume: 0.4,
-    playbackMode: 'intermittent',
+    playbackMode: 'loop',
   },
   {
     id: 'thunder-big-rumble',

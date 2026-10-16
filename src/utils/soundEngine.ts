@@ -54,12 +54,13 @@
  * File path (primary): each layer owns one HTMLAudioElement created in the
  * constructor and routed through createMediaElementSource() the first time the
  * context exists. Recordings stream (no full PCM in memory), loop layers use
- * el.loop. Thunder strikes never touch the layer's main element (it stays
- * parked as a readiness probe): every strike plays on its own throwaway
- * element + gain node ("strike voice"). The rumble recordings are 20-40s
- * long, so a scheduled strike routinely lands while the previous one is
- * still sounding — restarting one shared element chopped the audible rumble
- * (the stutter). Overlapping strike voices is also what a real storm does.
+ * el.loop — the distant thunder bed loops its long (hour-scale) recording, so
+ * wraps stay rare. Strikes (heavy thunder) never touch the layer's main
+ * element (it stays parked as a readiness probe): every strike plays on its
+ * own throwaway element + gain node ("strike voice") with a short attack
+ * fade. A scheduled strike can land while the previous one is still sounding
+ * (bursts) — restarting one shared element chopped the audible rumble (the
+ * stutter). Overlapping strike voices is also what a real storm does.
  *
  * Synth path (fallback): if a layer's recording fails (missing file, unsupported
  * format, network error, play() rejection), the engine marks the layer failed,
@@ -77,12 +78,14 @@
  *     member). Timing carries all of thunder's variety: base gaps are skewed
  *     short within the configured window (storms stay at least as frequent as
  *     a flat draw, never rarer), strikes can chain into rolling bursts a few
- *     seconds apart, and with both thunder layers enabled they alternate and
- *     occasionally pair near-simultaneously. The recordings themselves are
- *     never altered — every strike plays its file as recorded, from 0, with a
- *     random intensity, on its own strike voice so overlapping rumbles are
- *     never cut off (capped at MAX_CONCURRENT_STRIKES; the oldest voice is
- *     faded out, never hard-stopped).
+ *     seconds apart, and when several strike layers are enabled they
+ *     alternate and occasionally pair near-simultaneously (today only heavy
+ *     thunder is a strike candidate — the distant bed loops — so every strike
+ *     is heavy thunder). The recordings themselves are never altered — every
+ *     strike plays its file as recorded, from 0, with a random intensity, on
+ *     its own strike voice so overlapping rumbles are never cut off (capped
+ *     at MAX_CONCURRENT_STRIKES; the oldest voice is faded out, never
+ *     hard-stopped).
  *     Rescheduled only when it is absent or playback stops — moving a fader
  *     never restarts it. Cleared on pause, stop, and when no thunder layer is
  *     enabled; a cleared schedule also forgets any rolling burst. Pause/stop/
@@ -135,6 +138,7 @@ const GAIN_SMOOTHING = 0.05; // seconds (setTargetAtTime τ)
 const GATE_FADE = 0.12; // pause/stop close time
 const VOICE_FADE = 0.12; // synth voice teardown time
 const STRIKE_FADE = 0.12; // strike-voice fade-out (cap eviction / pause / stop)
+const STRIKE_FADE_IN = 0.6; // strike attack (seconds) — a strike swells in, never jumps
 const MAX_CONCURRENT_STRIKES = 4; // strike voices before the oldest is faded out
 const ELEMENT_PAUSE_DELAY = 220; // > GATE_FADE·3: elements pause behind a closed gate
 const DEFAULT_SLEEP_FADE = 60;
@@ -1250,6 +1254,14 @@ export class SoundEngine {
       this.markAssetFailed(layer.id, describeError(err));
       return;
     }
+
+    // Attack fade: without it a strike lands at full level instantly — an
+    // abrupt jump in the mix, and an overlapping strike reads as a hard
+    // restart of the rumble. Element volume carries the strike intensity,
+    // so the gain node only ramps 0 → 1.
+    const now = this.ctx.currentTime;
+    gain.gain.setValueAtTime(0, now);
+    gain.gain.linearRampToValueAtTime(1, now + STRIKE_FADE_IN);
 
     el.volume = intensity;
     const voice: StrikeVoice = { layerId: layer.id, el, gain, srcNode, done: false };

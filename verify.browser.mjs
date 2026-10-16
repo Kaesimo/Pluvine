@@ -83,6 +83,9 @@ try {
 
   // ---------------------------------------------------------------- play
   section('play: real AudioContext, real media elements');
+  // Distant thunder is the looping bed; heavy thunder is the strike layer.
+  // Enable it first so the scheduled strike below can be observed.
+  await page.getByRole('button', { name: 'Heavy thunder', exact: true }).click();
   await page.locator('.pl-play').click();
   await sleep(1200);
 
@@ -114,8 +117,9 @@ try {
   );
 
   // Real thunder strike: strikes play on their own throwaway elements (the
-  // layer's main element stays parked), so watch getStrikeElements() — a
-  // live voice advancing past 0 on the real 36.4s recording is the proof.
+  // strike layer's main element stays parked), so watch getStrikeElements() —
+  // a live voice advancing past 0 on the real heavy-thunder recording is the
+  // proof.
   const strikeFired = await (async () => {
     const deadline = Date.now() + 9000;
     while (Date.now() < deadline) {
@@ -202,7 +206,7 @@ try {
   await page.locator('.pl-toggle[title="Turn off Wind"]').click();
   await sleep(700);
   d = await diag();
-  ok(d.playingElements === 2, 'wind layer stopped again');
+  ok(d.playingElements === 3, 'wind layer stopped again (two rain layers + distant bed)');
 
   const beforeMaster = (await diag()).master;
   await page.locator('#pl-master').focus();
@@ -231,7 +235,11 @@ try {
   );
   ok(
     (await page.getByRole('button', { name: 'Distant thunder', exact: true }).getAttribute('aria-pressed')) === 'true',
-    'night storm enables distant thunder (strikes are intermittent)',
+    'night storm enables the distant thunder bed',
+  );
+  ok(
+    (await page.getByRole('button', { name: 'Heavy thunder', exact: true }).getAttribute('aria-pressed')) === 'true',
+    'night storm also enables the strike layer',
   );
   ok(
     (await page.getByRole('button', { name: 'Night storm', exact: true }).getAttribute('aria-pressed')) === 'true',

@@ -31,9 +31,9 @@ npm run dev        # http://localhost:3000
 
 ```bash
 npm run lint            # TypeScript check
-npm test                # engine tests (30 tests)
+npm test                # engine tests (29 tests)
 npm run build           # production bundle
-node verify.browser.mjs # 84 checks in Firefox
+node verify.browser.mjs # 85 checks in Firefox
 node verify.electron.mjs # 24 checks in the desktop app
 ```
 
