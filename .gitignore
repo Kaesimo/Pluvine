@@ -21,4 +21,4 @@ packaging/pkg/
 # runtime audio built from sounds/ (the two small thunder one-shots stay
 # tracked so a fresh clone runs out of the box)
 public/sounds/*
-!public/sounds/capaholiczsfx-*.mp3
+!public/sounds/*-thunder.opus

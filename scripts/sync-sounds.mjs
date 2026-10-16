@@ -3,8 +3,10 @@
  *
  * Reads the labeled originals in ./sounds (never modified) and writes Ogg
  * Opus 96k copies into ./public/sounds (the directory the app and every
- * build actually serve). One file per mixer layer; the two thunder one-shots
- * are already small/processed and live permanently in public/sounds untouched.
+ * build actually serve). One file per mixer layer — the eight long rain/
+ * wind/AC recordings (capped at 4 hours so loop wraps stay rare) and the
+ * two thunder one-shots (no cap: they play once per strike, not on a loop,
+ * and are standardized to the same 48kHz Opus as everything else).
  *
  * Why Opus 96k: rain/wind/AC are noise-like content, Opus's best case — at
  * 96k it matches or beats MP3 192k perceptually while halving the bytes.
@@ -49,6 +51,8 @@ const LAYERS = [
   ['rain-heavy-loop', 'Heavy rain.mp3', 'heavy-rain.opus', CAP_SECONDS],
   ['wind-blowing-ambience', 'wind.mp3', 'wind.opus', 0],
   ['mechanical-air-conditioner', 'AC hum.mp3', 'ac-hum.opus', 0],
+  ['thunder-distant-rumble', 'capaholiczsfx-distant-thunder-405128.mp3', 'distant-thunder.opus', 0],
+  ['thunder-big-rumble', 'capaholiczsfx-heavy-thunder-405126.mp3', 'heavy-thunder.opus', 0],
 ];
 
 const TARGET_BITRATE = '96k';
@@ -82,15 +86,26 @@ async function encode(src, out, capSeconds) {
   ]);
 }
 
-const jobs = LAYERS.map(([layerId, srcName, outName, cap]) => {
+const missing = [];
+const jobs = [];
+for (const [layerId, srcName, outName, cap] of LAYERS) {
   const src = join(srcDir, srcName);
   const out = join(outDir, outName);
   if (!existsSync(src)) {
-    console.error(`sounds:sync: missing source ${src}`);
-    process.exit(1);
+    missing.push(`${srcName} (layer ${layerId})`);
+    continue;
   }
-  return { layerId, src, out, cap };
-});
+  jobs.push({ layerId, src, out, cap });
+}
+if (missing.length > 0) {
+  console.warn(`sounds:sync: ${missing.length} source(s) missing from ./sounds:`);
+  for (const m of missing) console.warn(`  MISSING  ${m}`);
+  console.warn('  (those layers keep their existing output / synth fallback)');
+}
+if (jobs.length === 0) {
+  console.error('sounds:sync: no sources found in ./sounds — nothing to do');
+  process.exit(1);
+}
 
 const results = await Promise.all(
   jobs.map(async ({ layerId, src, out, cap }) => {
@@ -127,3 +142,6 @@ for (const r of results) {
 console.log(
   `sounds:sync: ${results.length} layers, ${(inTotal / 1048576).toFixed(0)}MB -> ${(outTotal / 1048576).toFixed(0)}MB in public/sounds`,
 );
+if (missing.length > 0) {
+  console.warn(`sounds:sync: skipped ${missing.length} missing source(s) — see list above`);
+}

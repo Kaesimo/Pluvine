@@ -11,8 +11,8 @@ export const ASSET_BASE = `${import.meta.env?.BASE_URL ?? '/'}sounds/`;
 
 /**
  * All runtime recordings are Ogg Opus 96k, built by `npm run sounds:sync`
- * from the originals in sounds/ (thunder one-shots are small MP3s). The
- * packaging-time WAV swap below is a legacy safety net: it only rewrites
+ * from the originals in sounds/ (rain layers, wind, AC, and thunder alike).
+ * The packaging-time WAV swap below is a legacy safety net: it only rewrites
  * .wav entries when a build ships WAV sources — with this manifest it is a
  * no-op.
  */
@@ -28,8 +28,8 @@ const RAW_ASSETS: Record<string, string> = {
   'rain-ambient-gentle': 'steady-rain.opus',
   'rain-heavy-loop': 'heavy-rain.opus',
   'wind-blowing-ambience': 'wind.opus',
-  'thunder-distant-rumble': 'capaholiczsfx-distant-thunder-405128.mp3',
-  'thunder-big-rumble': 'capaholiczsfx-heavy-thunder-405126.mp3',
+  'thunder-distant-rumble': 'distant-thunder.opus',
+  'thunder-big-rumble': 'heavy-thunder.opus',
   'mechanical-air-conditioner': 'ac-hum.opus',
 };
 
