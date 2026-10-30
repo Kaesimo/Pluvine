@@ -37,70 +37,70 @@ export const DEFAULT_SOUND_LAYERS: SoundLayerConfig[] = [
     id: 'rain-light-loop',
     name: 'Light rain',
     enabled: true,
-    volume: 0.85,
+    volume: 0.6,
     playbackMode: 'loop',
   },
   {
     id: 'rain-window-patter',
     name: 'Window rain',
     enabled: false,
-    volume: 0.5,
+    volume: 0.55,
     playbackMode: 'loop',
   },
   {
     id: 'rain-forest-loop',
     name: 'Forest rain',
     enabled: false,
-    volume: 0.8,
+    volume: 0.65,
     playbackMode: 'loop',
   },
   {
     id: 'rain-car-glass',
     name: 'Car rain',
     enabled: false,
-    volume: 0.85,
+    volume: 0.65,
     playbackMode: 'loop',
   },
   {
     id: 'rain-ambient-gentle',
     name: 'Steady rain',
     enabled: false,
-    volume: 0.8,
+    volume: 0.55,
     playbackMode: 'loop',
   },
   {
     id: 'rain-heavy-loop',
     name: 'Heavy rain',
     enabled: false,
-    volume: 0.85,
+    volume: 0.55,
     playbackMode: 'loop',
   },
   {
     id: 'wind-blowing-ambience',
     name: 'Wind',
     enabled: false,
-    volume: 0.35,
+    volume: 0.3,
     playbackMode: 'loop',
   },
   {
     id: 'thunder-distant-rumble',
     name: 'Distant thunder',
     enabled: true,
-    volume: 0.4,
+    volume: 0.35,
     playbackMode: 'loop',
   },
   {
     id: 'thunder-big-rumble',
     name: 'Heavy thunder',
     enabled: false,
-    volume: 0.55,
+    volume: 0.6,
     playbackMode: 'intermittent',
   },
   {
     id: 'mechanical-air-conditioner',
     name: 'AC hum',
     enabled: false,
-    volume: 0.35,
+    volume: 0.5,
     playbackMode: 'loop',
   },
 ];
@@ -108,107 +108,66 @@ export const DEFAULT_SOUND_LAYERS: SoundLayerConfig[] = [
 /**
  * Starter presets. Ids are stable (stored custom presets reference them).
  *
+ * Each preset is deliberately small: one dominant texture plus at most one
+ * quiet companion. The old bank stacked three or four loud layers into single
+ * presets, which is the opposite of what sleep needs. Levels here are written
+ * against the calibrated faders (utils/calibration.ts), so 0.6 really is a
+ * medium level on every channel.
+ *
  * Disabled layers keep their nominal level rather than 0: switching a layer
  * on from a preset always produces sound at a sensible level, and the live mix
  * compares cleanly against the preset it came from.
  */
+const NOMINAL_VOLUME: Record<string, number> = Object.fromEntries(
+  DEFAULT_SOUND_LAYERS.map((layer) => [layer.id, layer.volume])
+);
+
+/** Builds a complete layer-state map from the layers a preset turns on. */
+function preset(
+  id: string,
+  name: string,
+  on: Record<string, number>
+): Preset {
+  const layerStates: LayerStates = {};
+  for (const layer of DEFAULT_SOUND_LAYERS) {
+    layerStates[layer.id] = {
+      enabled: layer.id in on,
+      volume: on[layer.id] ?? NOMINAL_VOLUME[layer.id],
+    };
+  }
+  return { id, name, layerStates };
+}
+
 export const DEFAULT_PRESETS: Preset[] = [
-  {
-    id: 'preset-gentle-sleep',
-    name: 'Gentle rain',
-    layerStates: {
-      'rain-light-loop': { enabled: true, volume: 0.85 },
-      'rain-window-patter': { enabled: true, volume: 0.45 },
-      'rain-forest-loop': { enabled: false, volume: 0.8 },
-      'rain-car-glass': { enabled: false, volume: 0.85 },
-      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
-      'rain-heavy-loop': { enabled: false, volume: 0.85 },
-      'wind-blowing-ambience': { enabled: false, volume: 0.35 },
-      'thunder-distant-rumble': { enabled: true, volume: 0.35 },
-      'thunder-big-rumble': { enabled: false, volume: 0.55 },
-      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
-    },
-  },
-  {
-    id: 'preset-deep-storm',
-    name: 'Night storm',
-    layerStates: {
-      'rain-light-loop': { enabled: false, volume: 0.85 },
-      'rain-window-patter': { enabled: false, volume: 0.5 },
-      'rain-forest-loop': { enabled: false, volume: 0.7 },
-      'rain-car-glass': { enabled: true, volume: 0.6 },
-      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
-      'rain-heavy-loop': { enabled: false, volume: 0.85 },
-      'wind-blowing-ambience': { enabled: true, volume: 0.35 },
-      'thunder-distant-rumble': { enabled: true, volume: 0.5 },
-      'thunder-big-rumble': { enabled: true, volume: 0.5 },
-      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
-    },
-  },
-  {
-    id: 'preset-deep-focus',
-    name: 'Rain and hum',
-    layerStates: {
-      'rain-light-loop': { enabled: false, volume: 0.85 },
-      'rain-window-patter': { enabled: false, volume: 0.5 },
-      'rain-forest-loop': { enabled: false, volume: 0.8 },
-      'rain-car-glass': { enabled: false, volume: 0.85 },
-      'rain-ambient-gentle': { enabled: true, volume: 0.8 },
-      'rain-heavy-loop': { enabled: false, volume: 0.85 },
-      'wind-blowing-ambience': { enabled: false, volume: 0.35 },
-      'thunder-distant-rumble': { enabled: false, volume: 0.4 },
-      'thunder-big-rumble': { enabled: false, volume: 0.55 },
-      'mechanical-air-conditioner': { enabled: true, volume: 0.4 },
-    },
-  },
-  {
-    id: 'preset-cabin-window',
-    name: 'Window and wind',
-    layerStates: {
-      'rain-light-loop': { enabled: true, volume: 0.4 },
-      'rain-window-patter': { enabled: true, volume: 0.85 },
-      'rain-forest-loop': { enabled: false, volume: 0.8 },
-      'rain-car-glass': { enabled: false, volume: 0.85 },
-      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
-      'rain-heavy-loop': { enabled: false, volume: 0.85 },
-      'wind-blowing-ambience': { enabled: true, volume: 0.3 },
-      'thunder-distant-rumble': { enabled: false, volume: 0.4 },
-      'thunder-big-rumble': { enabled: false, volume: 0.55 },
-      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
-    },
-  },
-  {
-    id: 'preset-car-shelter',
-    name: 'Car rain',
-    layerStates: {
-      'rain-light-loop': { enabled: false, volume: 0.85 },
-      'rain-window-patter': { enabled: false, volume: 0.5 },
-      'rain-forest-loop': { enabled: false, volume: 0.8 },
-      'rain-car-glass': { enabled: true, volume: 0.9 },
-      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
-      'rain-heavy-loop': { enabled: false, volume: 0.85 },
-      'wind-blowing-ambience': { enabled: true, volume: 0.2 },
-      'thunder-distant-rumble': { enabled: true, volume: 0.3 },
-      'thunder-big-rumble': { enabled: false, volume: 0.55 },
-      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
-    },
-  },
-  {
-    id: 'preset-forest-sanctuary',
-    name: 'Forest rain',
-    layerStates: {
-      'rain-light-loop': { enabled: false, volume: 0.85 },
-      'rain-window-patter': { enabled: false, volume: 0.5 },
-      'rain-forest-loop': { enabled: true, volume: 0.85 },
-      'rain-car-glass': { enabled: false, volume: 0.85 },
-      'rain-ambient-gentle': { enabled: false, volume: 0.8 },
-      'rain-heavy-loop': { enabled: false, volume: 0.85 },
-      'wind-blowing-ambience': { enabled: true, volume: 0.25 },
-      'thunder-distant-rumble': { enabled: true, volume: 0.25 },
-      'thunder-big-rumble': { enabled: false, volume: 0.55 },
-      'mechanical-air-conditioner': { enabled: false, volume: 0.35 },
-    },
-  },
+  preset('preset-gentle-sleep', 'Gentle rain', {
+    'rain-light-loop': 0.6,
+    'thunder-distant-rumble': 0.3,
+  }),
+  preset('preset-window-rain', 'Window rain', {
+    'rain-window-patter': 0.65,
+    'rain-light-loop': 0.2,
+  }),
+  preset('preset-forest-sanctuary', 'Forest rain', {
+    'rain-forest-loop': 0.75,
+    'wind-blowing-ambience': 0.3,
+  }),
+  preset('preset-heavy-rain', 'Heavy rain', {
+    'rain-heavy-loop': 0.6,
+    'thunder-distant-rumble': 0.2,
+  }),
+  preset('preset-deep-storm', 'Night storm', {
+    'rain-heavy-loop': 0.55,
+    'thunder-distant-rumble': 0.55,
+    'thunder-big-rumble': 0.6,
+  }),
+  preset('preset-car-shelter', 'Car rain', {
+    'rain-car-glass': 0.65,
+    'wind-blowing-ambience': 0.2,
+  }),
+  preset('preset-deep-focus', 'Deep hum', {
+    'rain-ambient-gentle': 0.6,
+    'mechanical-air-conditioner': 0.55,
+  }),
 ];
 
 /** True when a layer list exactly matches a preset's states. */

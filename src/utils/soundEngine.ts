@@ -122,6 +122,7 @@ import {
   LayerStates,
 } from '../types/soundscape';
 import { LAYER_ASSETS, ASSET_BASE } from './assets';
+import { LAYER_TRIM } from './calibration';
 
 export type PlaybackState = 'stopped' | 'starting' | 'playing' | 'paused' | 'error';
 export type PlaybackIntent = 'play' | 'pause' | 'stop';
@@ -142,6 +143,16 @@ const STRIKE_FADE_IN = 0.6; // strike attack (seconds) — a strike swells in, n
 const MAX_CONCURRENT_STRIKES = 4; // strike voices before the oldest is faded out
 const ELEMENT_PAUSE_DELAY = 220; // > GATE_FADE·3: elements pause behind a closed gate
 const DEFAULT_SLEEP_FADE = 60;
+const HEALTH_CHECK_MS = 5000; // overnight watchdog cadence
+const LOOP_CROSSFADE_SECONDS = 4; // seamless wrap for continuous rain layers
+const MAX_ERROR_RECOVERIES = 2; // transient media errors before the synth fallback
+
+/**
+ * Thunder is deliberately excluded from the loop crossfade: the recordings are
+ * never altered, including their loop point. Rain/wind/AC layers are looped
+ * with a short overlap so the 4-hour wrap has no audible hole.
+ */
+const NO_CROSSFADE = new Set(['thunder-distant-rumble', 'thunder-big-rumble']);
 
 // ---------------------------------------------------------------------------
 // Synth fallback voices
@@ -346,6 +357,19 @@ interface LayerRuntime {
   activeSource: LayerSourceKind | 'none';
   /** Bumped by every intended play so stale deferred pauses become no-ops. */
   pauseSeq: number;
+  /** Gain between the primary element and the calibrated layer trim. */
+  voiceGain: GainNode | null;
+  /**
+   * Second loop voice, created lazily just before the first wrap. Continuous
+   * layers crossfade into it so a 4-hour recording never leaves a hole at the
+   * loop point. Intermittent layers never use it.
+   */
+  altEl: HTMLAudioElement | null;
+  altSrcNode: MediaElementAudioSourceNode | null;
+  altGain: GainNode | null;
+  activeVoice: 'a' | 'b';
+  crossfading: boolean;
+  crossfadeTimer: ReturnType<typeof setTimeout> | null;
 }
 
 interface SynthVoice {
@@ -386,6 +410,10 @@ export interface SoundEngineOptions {
   sleepTickMs?: number;
   /** pause elements this long after the gate closes on pause/stop, ms */
   elementPauseDelay?: number;
+  /** overnight health-watchdog cadence in ms */
+  healthCheckMs?: number;
+  /** overlap length for the seamless loop crossfade, seconds */
+  crossfadeSeconds?: number;
 }
 
 export class SoundEngine {
@@ -402,6 +430,8 @@ export class SoundEngine {
   private masterGain: GainNode | null = null;
   private limiter: DynamicsCompressorNode | null = null;
   private layerGains: Map<string, GainNode> = new Map();
+  /** Per-recording calibration, between every source and the user fader. */
+  private layerTrims: Map<string, GainNode> = new Map();
 
   // -- sources -------------------------------------------------------------
   private layers: SoundLayerConfig[] = DEFAULT_SOUND_LAYERS.map((l) => ({ ...l }));
@@ -427,6 +457,13 @@ export class SoundEngine {
   private sleepInterval: ReturnType<typeof setInterval> | null = null;
   private sleepRemaining = 0;
   private sleepFadeSeconds = DEFAULT_SLEEP_FADE;
+  /** Wall-clock anchor for the countdown: throttled timers must not stretch it. */
+  private sleepLastTickAt = 0;
+  /** Overnight watchdog: restarts stalled elements and resumes the context. */
+  private healthTimer: ReturnType<typeof setInterval> | null = null;
+  private lastPositions: Map<string, number> = new Map();
+  private stallTicks: Map<string, number> = new Map();
+  private errorRecoveries: Map<string, number> = new Map();
   /** Short-lived cleanup/defer timers; all cleared on destroy(). */
   private transientTimers: Set<ReturnType<typeof setTimeout>> = new Set();
   private lastFailureReasons: Map<string, string> = new Map();
@@ -455,6 +492,8 @@ export class SoundEngine {
       rng: options.rng ?? Math.random,
       sleepTickMs: options.sleepTickMs ?? 1000,
       elementPauseDelay: options.elementPauseDelay ?? ELEMENT_PAUSE_DELAY,
+      healthCheckMs: options.healthCheckMs ?? HEALTH_CHECK_MS,
+      crossfadeSeconds: options.crossfadeSeconds ?? LOOP_CROSSFADE_SECONDS,
     };
     // Elements are created up front so metadata is available immediately and
     // the first play() starts without construction latency; the recordings
@@ -538,6 +577,7 @@ export class SoundEngine {
     this.retireAllSynthVoices();
     this.clearThunderTimer();
     this.disposeAllStrikeVoices(VOICE_FADE);
+    this.stopHealthWatchdog();
     this.scheduleElementPause();
     this.setState('paused');
   }
@@ -553,6 +593,7 @@ export class SoundEngine {
     this.retireAllSynthVoices();
     this.clearThunderTimer();
     this.disposeAllStrikeVoices(VOICE_FADE);
+    this.stopHealthWatchdog();
     this.clearSleepTimer(/* restoreOutput */ false);
     this.scheduleElementPause();
     this.setState('stopped');
@@ -615,6 +656,7 @@ export class SoundEngine {
     this.clearSleepTimer(true);
     this.sleepRemaining = Math.max(1, Math.round(totalSeconds));
     this.sleepFadeSeconds = Math.max(0, Math.round(fadeSeconds));
+    this.sleepLastTickAt = Date.now();
     this.applySleepFade();
     // Interval must exist before the first report: getSleepTimerRemaining()
     // returns 0 while no interval is armed.
@@ -628,6 +670,7 @@ export class SoundEngine {
   addSleepTimerTime(seconds: number): void {
     if (this.sleepInterval === null) return;
     this.sleepRemaining = Math.max(0, this.sleepRemaining + Math.round(seconds));
+    this.sleepLastTickAt = Date.now();
     this.applySleepFade();
     this.notifySleepTimer();
   }
@@ -644,7 +687,13 @@ export class SoundEngine {
 
   private tickSleepTimer(): void {
     if (this.sleepInterval === null) return;
-    this.sleepRemaining = Math.max(0, this.sleepRemaining - 1);
+    // Count real elapsed seconds, not timer callbacks: Chromium can throttle a
+    // background interval to once a minute, and a suspended machine can skip
+    // hours. Either way the countdown must still reach zero on time.
+    const now = Date.now();
+    const elapsed = Math.max(1, Math.round((now - this.sleepLastTickAt) / 1000));
+    this.sleepLastTickAt = now;
+    this.sleepRemaining = Math.max(0, this.sleepRemaining - elapsed);
     this.applySleepFade();
     this.notifySleepTimer();
 
@@ -676,6 +725,7 @@ export class SoundEngine {
       this.sleepInterval = null;
     }
     this.sleepRemaining = 0;
+    this.sleepLastTickAt = 0;
     if (restoreOutput) {
       this.setSleepOutput(1);
     }
@@ -734,11 +784,19 @@ export class SoundEngine {
     this.limiter = limiter;
 
     this.layerGains.clear();
+    this.layerTrims.clear();
     for (const layer of this.layers) {
       const g = ctx.createGain();
       g.gain.setValueAtTime(layer.enabled ? layer.volume : 0, ctx.currentTime);
       g.connect(master);
       this.layerGains.set(layer.id, g);
+
+      // Calibration sits between the recording and the user fader, so the
+      // fader keeps its plain 0..1 meaning on every channel.
+      const trim = ctx.createGain();
+      trim.gain.setValueAtTime(LAYER_TRIM[layer.id] ?? 1, ctx.currentTime);
+      trim.connect(g);
+      this.layerTrims.set(layer.id, trim);
     }
 
     this.prepareNoiseBuffers(ctx); // (re)generates noise + sets synthContextReady
@@ -749,7 +807,11 @@ export class SoundEngine {
       if (rt?.el && !rt.routed) {
         try {
           const src = ctx.createMediaElementSource(rt.el);
-          src.connect(this.layerGains.get(layer.id)!);
+          const voiceGain = ctx.createGain();
+          voiceGain.gain.setValueAtTime(1, ctx.currentTime);
+          voiceGain.connect(this.layerTrim(layer.id)!);
+          src.connect(voiceGain);
+          rt.voiceGain = voiceGain;
           rt.routed = true;
         } catch (err) {
           this.markAssetFailed(layer.id, describeError(err));
@@ -792,6 +854,10 @@ export class SoundEngine {
 
   private layerGain(layerId: string): GainNode | null {
     return this.layerGains.get(layerId) ?? null;
+  }
+
+  private layerTrim(layerId: string): GainNode | null {
+    return this.layerTrims.get(layerId) ?? null;
   }
 
   private syncLayerGain(layer: SoundLayerConfig): void {
@@ -838,6 +904,7 @@ export class SoundEngine {
     }
 
     this.syncThunderSchedule(true); // quick first strike at playback start
+    this.startHealthWatchdog();
   }
 
   private startLayerSource(layerId: string): void {
@@ -855,7 +922,7 @@ export class SoundEngine {
     // Path change: tear the other path down first (never both at once).
     // A failure switch is instant — the file is silent or broken anyway.
     if (current === 'synth' && wantsFile) this.retireSynthVoice(layerId, VOICE_FADE);
-    if (current === 'file' && !wantsFile && rt.el) this.safeElementPause(rt.el);
+    if (current === 'file' && !wantsFile) this.pauseLayerElements(rt);
 
     if (wantsFile) {
       rt.activeSource = 'file';
@@ -889,7 +956,8 @@ export class SoundEngine {
     const rt = this.runtime.get(layerId);
     if (!rt?.el || !this.ctx || this.ctx.state === 'closed') return;
     if (!rt.routed) return; // never audible outside the graph
-    const el = rt.el;
+    const el = this.activeElement(rt);
+    if (!el) return;
     rt.pauseSeq++; // invalidate any deferred pause for this layer
     if (!el.paused && !el.ended) return;
     const p = el.play();
@@ -903,14 +971,24 @@ export class SoundEngine {
     }
   }
 
+  /** The loop voice currently carrying the layer (a or b). */
+  private activeElement(rt: LayerRuntime): HTMLAudioElement | null {
+    return rt.activeVoice === 'b' && rt.altEl ? rt.altEl : rt.el;
+  }
+
+  private pauseLayerElements(rt: LayerRuntime): void {
+    if (rt.el) this.safeElementPause(rt.el);
+    if (rt.altEl) this.safeElementPause(rt.altEl);
+  }
+
   /**
-   * Pauses a layer's element after `delayMs`, but only if the layer has not
+   * Pauses a layer's elements after `delayMs`, but only if the layer has not
    * been re-enabled and playback has not resumed in the meantime (seq guard).
    */
   private scheduleLayerPause(layerId: string, delayMs: number): void {
     const rt = this.runtime.get(layerId);
-    if (!rt?.el || delayMs <= 0) {
-      if (rt?.el) this.safeElementPause(rt.el);
+    if (!rt || delayMs <= 0) {
+      if (rt) this.pauseLayerElements(rt);
       return;
     }
     const seq = rt.pauseSeq;
@@ -918,7 +996,7 @@ export class SoundEngine {
       if (rt.pauseSeq !== seq) return; // superseded by an intended play
       const layer = this.getLayer(layerId);
       if (this.state === 'playing' && layer?.enabled) return; // legitimately active
-      this.safeElementPause(rt.el!);
+      this.pauseLayerElements(rt);
     }, delayMs);
   }
 
@@ -936,10 +1014,220 @@ export class SoundEngine {
     this.elementPauseTimer = setTimeout(() => {
       this.elementPauseTimer = null;
       if (this.state === 'playing') return; // resumed in the meantime
-      for (const rt of this.runtime.values()) {
-        if (rt.el) this.safeElementPause(rt.el);
-      }
+      for (const rt of this.runtime.values()) this.pauseLayerElements(rt);
     }, this.opts.elementPauseDelay);
+  }
+
+  // -- overnight health watchdog -------------------------------------------
+  private startHealthWatchdog(): void {
+    this.stopHealthWatchdog();
+    this.healthTimer = setInterval(() => {
+      if (this.destroyed) return;
+      // Resume context if browser suspended it while intent is still play.
+      if (this.ctx && this.ctx.state !== 'running' && this.intent === 'play') {
+        this.ctx.resume().catch(() => {});
+      }
+      // Detect stalled loop elements and nudge them.
+      for (const [layerId, rt] of this.runtime) {
+        const layer = this.getLayer(layerId);
+        if (!layer || layer.playbackMode !== 'loop' || !rt.el || rt.status === 'failed') continue;
+        const el = this.activeElement(rt);
+        if (!el || el.paused) continue;
+        const pos = el.currentTime;
+        const last = this.lastPositions.get(layerId) ?? -1;
+        if (pos === last) {
+          const ticks = (this.stallTicks.get(layerId) ?? 0) + 1;
+          this.stallTicks.set(layerId, ticks);
+          if (ticks >= 2) {
+            // Stalled: seek a tiny amount and replay to unstick.
+            try {
+              el.currentTime = Math.max(0, el.currentTime + 0.01);
+            } catch {}
+            this.playElement(layerId);
+            this.stallTicks.set(layerId, 0);
+          }
+        } else {
+          this.stallTicks.set(layerId, 0);
+        }
+        this.lastPositions.set(layerId, pos);
+      }
+    }, this.opts.healthCheckMs);
+  }
+
+  private stopHealthWatchdog(): void {
+    if (this.healthTimer !== null) {
+      clearInterval(this.healthTimer);
+      this.healthTimer = null;
+    }
+    // Clear stall state on stop so a later start starts fresh.
+    this.lastPositions.clear();
+    this.stallTicks.clear();
+  }
+
+  private handleElementError(layerId: string, isAlt = false): void {
+    if (isAlt) {
+      // Alt voice errors are transient; just dispose the alt voice and let
+      // the primary continue. Don't poison the layer's status.
+      const rt = this.runtime.get(layerId);
+      if (rt) this.disposeAltVoice(rt);
+      return;
+    }
+    const count = (this.errorRecoveries.get(layerId) ?? 0) + 1;
+    this.errorRecoveries.set(layerId, count);
+    if (count > MAX_ERROR_RECOVERIES) {
+      this.markAssetFailed(layerId, 'recording error after retries');
+    }
+    // Otherwise transient: keep the layer enabled and let the next
+    // reconcile retry playback.
+  }
+
+  // -- seamless loop wrap ---------------------------------------------------
+
+  /**
+   * Starts the second loop voice just before the active one reaches its end,
+   * then crossfades over `crossfadeSeconds`. Without this a 4-hour recording
+   * wraps with an audible hole (and a hard discontinuity between its cut tail
+   * and head) once or twice a night. Thunder layers are excluded: their
+   * recordings are never altered, loop point included.
+   */
+  private maybeCrossfade(layerId: string): void {
+    const layer = this.getLayer(layerId);
+    const rt = this.runtime.get(layerId);
+    if (!layer || !rt || layer.playbackMode !== 'loop' || NO_CROSSFADE.has(layerId)) return;
+    if (rt.crossfading || rt.status === 'failed') return;
+    if (!this.ctx || this.ctx.state === 'closed') return;
+    if (this.state !== 'playing' || this.intent !== 'play') return;
+
+    const el = this.activeElement(rt);
+    if (!el || el.paused || el.ended) return;
+    const duration = el.duration;
+    const fade = this.opts.crossfadeSeconds;
+    if (!Number.isFinite(duration) || duration < fade * 2 + 2) return;
+    const remaining = duration - el.currentTime;
+    if (remaining < 0 || remaining > fade + 1) return;
+    this.startCrossfade(layerId);
+  }
+
+  /** Lazily creates the alternate loop voice (element + source + gain). */
+  private ensureAltVoice(layerId: string): boolean {
+    const rt = this.runtime.get(layerId);
+    if (!rt || !this.ctx || this.ctx.state === 'closed') return false;
+    if (rt.altEl && rt.altGain && rt.altSrcNode) return true;
+
+    const file = LAYER_ASSETS[layerId];
+    if (!file) return false;
+    let el: HTMLAudioElement;
+    try {
+      el = document.createElement('audio');
+      el.preload = 'auto'; // it must be buffered before the old voice fades out
+      el.loop = true;
+      el.src = ASSET_BASE + file;
+    } catch {
+      return false;
+    }
+
+    const trim = this.layerTrim(layerId);
+    if (!trim) return false;
+    const gain = this.ctx.createGain();
+    gain.gain.setValueAtTime(0, this.ctx.currentTime);
+    gain.connect(trim);
+
+    let srcNode: MediaElementAudioSourceNode;
+    try {
+      srcNode = this.ctx.createMediaElementSource(el);
+    } catch {
+      try {
+        gain.disconnect();
+      } catch { /* already gone */ }
+      return false;
+    }
+    srcNode.connect(gain);
+
+    rt.altEl = el;
+    rt.altGain = gain;
+    rt.altSrcNode = srcNode;
+    el.addEventListener?.('timeupdate', () => this.maybeCrossfade(layerId));
+    // The primary element remains the readiness probe; a hiccup on the spare
+    // voice must never mark the whole layer failed.
+    el.addEventListener?.('error', () => this.handleElementError(layerId, true));
+    el.addEventListener?.('ended', () => this.playElement(layerId));
+    return true;
+  }
+
+  private startCrossfade(layerId: string): void {
+    const rt = this.runtime.get(layerId);
+    if (!rt || !this.ctx || rt.crossfading) return;
+    if (!this.ensureAltVoice(layerId)) return;
+
+    const from: 'a' | 'b' = rt.activeVoice;
+    const fromEl = from === 'a' ? rt.el : rt.altEl;
+    const toEl = from === 'a' ? rt.altEl : rt.el;
+    const fromGain = from === 'a' ? rt.voiceGain : rt.altGain;
+    const toGain = from === 'a' ? rt.altGain : rt.voiceGain;
+    if (!fromEl || !toEl || !fromGain || !toGain) return;
+
+    const now = this.ctx.currentTime;
+    const fade = Math.max(0.1, this.opts.crossfadeSeconds);
+    rt.crossfading = true;
+
+    try {
+      toEl.currentTime = 0;
+    } catch { /* not seekable yet; play() starts at 0 anyway */ }
+    toGain.gain.cancelScheduledValues(now);
+    toGain.gain.setValueAtTime(0, now);
+    fromGain.gain.cancelScheduledValues(now);
+    fromGain.gain.setValueAtTime(1, now);
+    toGain.gain.linearRampToValueAtTime(1, now + fade);
+    fromGain.gain.linearRampToValueAtTime(0, now + fade);
+
+    const p = toEl.play();
+    if (p && typeof p.catch === 'function') {
+      p.catch(() => {
+        // Keep the old voice audible; the watchdog will retry the next wrap.
+        rt.crossfading = false;
+      });
+    }
+
+    rt.crossfadeTimer = this.later(() => {
+      rt.crossfadeTimer = null;
+      rt.crossfading = false;
+      this.safeElementPause(fromEl);
+      try {
+        fromEl.currentTime = 0;
+      } catch { /* ignore */ }
+      const t = this.ctx?.currentTime ?? 0;
+      fromGain.gain.cancelScheduledValues(t);
+      fromGain.gain.setValueAtTime(0, t);
+      toGain.gain.cancelScheduledValues(t);
+      toGain.gain.setValueAtTime(1, t);
+      rt.activeVoice = from === 'a' ? 'b' : 'a';
+    }, fade * 1000 + 350);
+  }
+
+  private disposeAltVoice(rt: LayerRuntime): void {
+    if (rt.crossfadeTimer !== null) {
+      clearTimeout(rt.crossfadeTimer);
+      this.transientTimers.delete(rt.crossfadeTimer);
+      rt.crossfadeTimer = null;
+    }
+    rt.crossfading = false;
+    if (rt.altEl) {
+      try {
+        rt.altEl.pause();
+        rt.altEl.removeAttribute?.('src');
+        rt.altEl.load?.();
+      } catch { /* teardown best effort */ }
+    }
+    try {
+      rt.altSrcNode?.disconnect();
+    } catch { /* already gone */ }
+    try {
+      rt.altGain?.disconnect();
+    } catch { /* already gone */ }
+    rt.altEl = null;
+    rt.altSrcNode = null;
+    rt.altGain = null;
+    rt.activeVoice = 'a';
   }
 
   // -- synth fallback voices ------------------------------------------------
@@ -947,13 +1235,13 @@ export class SoundEngine {
   private startSynthVoice(layerId: string): void {
     if (this.synthVoices.has(layerId)) return;
     if (!this.ctx || !this.synthContextReady || !this.pinkNoise || !this.brownNoise) return;
-    const gain = this.layerGain(layerId);
+    const trim = this.layerTrim(layerId);
     const recipe = SYNTH_RECIPES[layerId];
-    if (!gain || !recipe) return;
+    if (!trim || !recipe) return;
 
     const out = this.ctx.createGain();
     out.gain.setValueAtTime(0, this.ctx.currentTime);
-    out.connect(gain);
+    out.connect(trim);
 
     const b = new VoiceBuilder(this.ctx, out, this.pinkNoise, this.brownNoise);
     try {
@@ -1150,13 +1438,13 @@ export class SoundEngine {
 
     // Synth fallback strike.
     if (!this.ctx || !this.synthContextReady || !this.brownNoise) return;
-    const gain = this.layerGain(layer.id);
-    if (!gain) return;
+    const trim = this.layerTrim(layer.id);
+    if (!trim) return;
     const now = this.ctx.currentTime;
 
     const out = this.ctx.createGain();
     out.gain.setValueAtTime(1, now);
-    out.connect(gain);
+    out.connect(trim);
 
     const sub = this.ctx.createOscillator();
     sub.type = 'triangle';
@@ -1222,8 +1510,8 @@ export class SoundEngine {
   private playStrikeVoice(layer: SoundLayerConfig, intensity: number): void {
     if (!this.ctx || this.ctx.state === 'closed') return;
     const file = LAYER_ASSETS[layer.id];
-    const layerGainNode = this.layerGain(layer.id);
-    if (!file || !layerGainNode) return;
+    const layerTrimNode = this.layerTrim(layer.id);
+    if (!file || !layerTrimNode) return;
 
     while (this.strikeVoices.length >= MAX_CONCURRENT_STRIKES) {
       const oldest = this.strikeVoices[0];
@@ -1246,7 +1534,7 @@ export class SoundEngine {
     try {
       srcNode = this.ctx.createMediaElementSource(el);
       srcNode.connect(gain);
-      gain.connect(layerGainNode);
+      gain.connect(layerTrimNode);
     } catch (err) {
       try {
         gain.disconnect();
@@ -1268,21 +1556,15 @@ export class SoundEngine {
     this.strikeVoices.push(voice);
 
     el.addEventListener?.('ended', () => this.retireStrikeVoice(voice), { once: true });
-    el.addEventListener?.(
-      'error',
-      () => {
-        this.retireStrikeVoice(voice);
-        this.markAssetFailed(layer.id, 'recording could not be loaded');
-      },
-      { once: true }
-    );
+    el.addEventListener?.('error', () => this.retireStrikeVoice(voice), { once: true });
 
     const p = el.play();
     if (p && typeof p.catch === 'function') {
-      p.catch(() => {
-        this.retireStrikeVoice(voice);
-        this.markAssetFailed(layer.id, 'playback was blocked');
-      });
+      // A failed strike voice must never condemn the whole layer: the parked
+      // main element is the readiness probe, and the next strike gets a fresh
+      // voice. Over a night one transient hiccup would otherwise switch the
+      // layer to the synth fallback forever.
+      p.catch(() => this.retireStrikeVoice(voice));
     }
   }
 
@@ -1391,6 +1673,13 @@ export class SoundEngine {
       status: !el || !file ? 'failed' : 'loading',
       activeSource: 'none',
       pauseSeq: 0,
+      voiceGain: null,
+      altEl: null,
+      altSrcNode: null,
+      altGain: null,
+      activeVoice: 'a',
+      crossfading: false,
+      crossfadeTimer: null,
     };
   }
 
@@ -1569,6 +1858,7 @@ export class SoundEngine {
 
     this.clearThunderTimer();
     this.clearSleepTimer(false);
+    this.stopHealthWatchdog();
     this.disposeAllStrikeVoices(0); // immediate: the context is about to close
     if (this.elementPauseTimer !== null) {
       clearTimeout(this.elementPauseTimer);

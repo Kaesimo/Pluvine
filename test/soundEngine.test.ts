@@ -524,7 +524,7 @@ async function runTests(): Promise<void> {
     assertEq(diag.synthVoices, 0, 'healthy files use the file path, no synth voices');
     assertEq(
       diag.layerGainValues['rain-light-loop'],
-      0.85,
+      0.6,
       'enabled layer gain equals its level'
     );
     assertEq(diag.layerGainValues['rain-forest-loop'], 0, 'disabled layer gain is 0');
@@ -659,7 +659,7 @@ async function runTests(): Promise<void> {
     assertEq(engine.getDiagnostics().playingElements, 3, 'enabling a loop layer starts it');
     assertClose(
       engine.getDiagnostics().layerGainValues['rain-window-patter'],
-      0.5,
+      0.55,
       1e-9,
       'enabled gain equals its level'
     );
@@ -730,7 +730,7 @@ async function runTests(): Promise<void> {
 
     await sleep(80);
     const after = engine.getDiagnostics();
-    assertEq(after.playingElements, 3, 'car + wind + the distant thunder bed are running (forest is off)');
+    assertEq(after.playingElements, 2, 'heavy rain + distant thunder bed are running (light rain off)');
     assertEq(elementFor(engine, 'rain-light-loop').paused, true, 'previously playing layer stopped');
     assertEq(elementFor(engine, 'rain-window-patter').paused, true, 'other default layer stopped');
     assertEq(
