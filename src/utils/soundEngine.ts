@@ -1685,8 +1685,11 @@ export class SoundEngine {
 
   private markAssetReady(layerId: string): void {
     const rt = this.runtime.get(layerId);
-    if (!rt || rt.status === 'ready') return;
+    if (!rt) return;
+    if (rt.status === 'ready') return;
     rt.status = 'ready';
+    this.errorRecoveries.delete(layerId);
+    this.lastFailureReasons.delete(layerId);
     this.notifyAssetStatuses();
     if (this.state === 'playing' && this.getLayer(layerId)?.enabled) this.reconcile();
   }
