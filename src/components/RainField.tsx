@@ -230,14 +230,15 @@ export function RainField({ playing, flash }: Props) {
     // Android keeps the WebView alive for background audio, so the app tells
     // the canvas when it is actually hidden. On the web the tab's own
     // visibilitychange event does the same job.
+    let appActive = true;
     const onAppState = (event: Event) => {
-      const active = (event as CustomEvent<boolean>).detail;
-      if (active) start();
+      appActive = (event as CustomEvent<boolean>).detail;
+      if (appActive && document.visibilityState !== 'hidden') start();
       else stop();
     };
 
     const onVisibility = () => {
-      if (document.visibilityState === 'hidden') stop();
+      if (!appActive || document.visibilityState === 'hidden') stop();
       else start();
     };
 
