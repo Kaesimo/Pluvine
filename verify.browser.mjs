@@ -73,7 +73,7 @@ try {
   await sleep(900);
 
   ok((await page.locator('.pl-fader-input').count()) === 10, 'ten faders rendered');
-  ok((await page.locator('.pl-preset').count()) === 6, 'six presets rendered');
+  ok((await page.locator('.pl-preset').count()) === 7, 'seven presets rendered');
   ok((await statusText()) === 'Stopped', 'status reads Stopped initially');
   ok(
     await page.evaluate(() => document.fonts.check('600 15px "IBM Plex Sans Variable"')),
@@ -206,7 +206,7 @@ try {
   await page.locator('.pl-toggle[title="Turn off Wind"]').click();
   await sleep(700);
   d = await diag();
-  ok(d.playingElements === 3, 'wind layer stopped again (two rain layers + distant bed)');
+  ok(d.playingElements === 2, 'wind layer stopped again (light rain + distant bed)');
 
   const beforeMaster = (await diag()).master;
   await page.locator('#pl-master').focus();
@@ -222,12 +222,12 @@ try {
   d = await diag();
   ok((await statusText()) === 'Playing', 'still Playing after preset switch');
   ok((await mixName()) === 'Night storm', 'mix name follows the preset');
-  ok(d.playingElements >= 2, `night storm runs car + wind (${d.playingElements} playing)`);
+  ok(d.playingElements === 2, `night storm runs heavy rain + distant bed (${d.playingElements} playing)`);
   ok(
-    ['rain-car-glass', 'wind-blowing-ambience'].every(
+    ['rain-heavy-loop', 'thunder-distant-rumble'].every(
       (id) => d.layerGainValues[id] > 0,
     ),
-    'car and wind layers carry signal',
+    'heavy rain and distant thunder carry signal',
   );
   ok(
     d.layerGainValues['rain-forest-loop'] === 0,
