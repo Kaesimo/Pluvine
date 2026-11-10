@@ -305,5 +305,12 @@ and verify `git log --format='%an <%ae> | %cn <%ce>' -1` after the first new com
 - Android runtime is NOT verified on a device or emulator in this environment.
   The foreground-service + WebView approach follows the known Capacitor
   background-audio fix; test on a real phone before calling it reliable.
+- Release asset: `app-debug.apk` on `v1.0.3`, 163,331,068 bytes, sha256
+  `5146138966317aa3206520ecdeb2e719475992bdf4d1a94b54f7e7868bf1ba2c`.
+  Build it with `./gradlew clean assembleDebug` — incremental packaging leaves
+  large zero/duplicate gaps and inflates the APK (176 MB vs 163 MB).
+- `RainField` stops its animation loop when Android backgrounds the app
+  (`pluvine:appstate`) or the tab is hidden, and resumes only when both are
+  active.
 - The deleted `sounds/README.md` in the working tree is the user's local change
   and was intentionally not committed.
