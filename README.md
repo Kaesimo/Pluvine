@@ -1,6 +1,6 @@
 # Pluvine
 
-A desktop ambient rain mixer. One window with ten sound layers — rain, wind,
+An ambient rain mixer for Linux and Android. One window with ten sound layers — rain, wind,
 thunder, and air-conditioner hum — each with its own on/off switch and level.
 There are presets, a sleep timer, master volume, and lightning in the
 background. No accounts, no streaming, no internet connection needed.
@@ -19,6 +19,20 @@ is prepared but not published yet.
 
 For other setups, build an AppImage or a pacman package with
 `npm run dist:linux`.
+
+## Android
+
+The Capacitor shell lives in `android/`. Build a debug APK with:
+
+```bash
+npm run android:apk
+```
+
+The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk` and
+is debug-signed for sideloading. A release build needs your own keystore.
+The mobile package uses 20-minute Opus copies of the long rain layers; both
+thunder recordings stay byte-for-byte verbatim. A foreground service keeps
+playback alive when the screen is off or the app is in the background.
 
 ## Run from source
 

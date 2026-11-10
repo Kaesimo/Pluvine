@@ -24,6 +24,7 @@ import {
   saveKeepTimerVisible,
   saveMasterVolume,
 } from './utils/presets';
+import { setBackgroundPlayback } from './utils/backgroundPlayback';
 import { RainField, type LightningFlash } from './components/RainField';
 import { Transport } from './components/Transport';
 import { Mixer } from './components/Mixer';
@@ -101,6 +102,20 @@ export default function App() {
     !activePreset || !mixMatchesPreset(layers, activePreset.layerStates);
   const mixName = activePreset && !edited ? activePreset.name : 'Custom mix';
   const isPlaying = playbackState === 'playing' || playbackState === 'starting';
+
+  // Android: keep the WebView process alive while rain is playing so the app
+  // survives screen-off and backgrounding. No-op on the web.
+  useEffect(() => {
+    setBackgroundPlayback(isPlaying);
+  }, [isPlaying]);
+
+  // The Android notification's Pause action arrives as a DOM event; route it
+  // through the same intent-level engine method as the in-app transport.
+  useEffect(() => {
+    const pause = () => soundEngine.pause();
+    window.addEventListener('pluvine:pause', pause);
+    return () => window.removeEventListener('pluvine:pause', pause);
+  }, []);
 
   // --- sleep mode: chrome fades to the rain, the timer stays ------------------
   // While the timer runs, the interface quietly leaves the screen. Any pointer
@@ -280,7 +295,7 @@ export default function App() {
       <RainField playing={isPlaying} flash={flash} />
 
       <div className="relative z-10 flex min-h-dvh flex-col">
-        <header className="mx-auto flex h-16 w-full max-w-[880px] items-center justify-between gap-4 px-4 sm:px-5">
+        <header className="pl-safe-top pl-safe-x mx-auto flex h-16 w-full max-w-[880px] items-center justify-between gap-4">
           <div className="pl-ui flex items-center gap-2.5 text-rain">
             <IconMark />
             <span className="text-[17px] font-semibold tracking-tight text-text">
@@ -319,7 +334,7 @@ export default function App() {
           </div>
         </header>
 
-        <main className="pl-ui flex flex-1 px-4 pb-8 sm:px-5">
+        <main className="pl-safe-x pl-safe-bottom pl-ui flex flex-1">
           <div className="pl-plate m-auto w-full max-w-[880px]">
             <Transport
               state={playbackState}

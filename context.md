@@ -286,3 +286,24 @@ and verify `git log --format='%an <%ae> | %cn <%ce>' -1` after the first new com
   large binaries.
 - Keep releases honest: tag only what was tested, keep old releases, pin AUR shas
   to GitHub's computed digest when possible.
+
+## 11. Android build (added after v1.0.3)
+
+- Capacitor 8 shell in `android/`, app id `app.pluvine`, versionName `1.0.3`
+  (versionCode 4).
+- Build: `npm run android:apk` — builds the web bundle, creates 20-minute 48k
+  Opus mobile copies, syncs Capacitor, and runs Gradle. Output:
+  `android/app/build/outputs/apk/debug/app-debug.apk`.
+- The APK is debug-signed for sideloading; there is no release keystore yet.
+- Mobile audio: rain/wind/AC are 20-minute 48k Opus copies (~151 MB total).
+  `distant-thunder.opus` and `heavy-thunder.opus` are copied byte-for-byte.
+- Background audio: `PlaybackService` runs a `mediaPlayback` foreground service
+  with a partial wake lock, `BackgroundWebView` keeps the WebView renderer alive
+  when the screen locks, and `src/utils/backgroundPlayback.ts` starts/stops the
+  service with playback. The notification's Pause action dispatches
+  `pluvine:pause` into the same engine path as the in-app transport.
+- Android runtime is NOT verified on a device or emulator in this environment.
+  The foreground-service + WebView approach follows the known Capacitor
+  background-audio fix; test on a real phone before calling it reliable.
+- The deleted `sounds/README.md` in the working tree is the user's local change
+  and was intentionally not committed.

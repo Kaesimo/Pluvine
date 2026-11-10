@@ -68,6 +68,7 @@ export function RainField({ playing, flash }: Props) {
     let flashAlpha = 0;
     let lastFlashSeq = flashRef.current.seq;
     let animId = 0;
+    let running = false;
 
     const seed = () => {
       width = canvas.width = window.innerWidth;
@@ -210,8 +211,34 @@ export function RainField({ playing, flash }: Props) {
     };
 
     const render = () => {
+      if (!running) return;
       step(true);
       animId = requestAnimationFrame(render);
+    };
+
+    const start = () => {
+      if (running) return;
+      running = true;
+      animId = requestAnimationFrame(render);
+    };
+
+    const stop = () => {
+      running = false;
+      cancelAnimationFrame(animId);
+    };
+
+    // Android keeps the WebView alive for background audio, so the app tells
+    // the canvas when it is actually hidden. On the web the tab's own
+    // visibilitychange event does the same job.
+    const onAppState = (event: Event) => {
+      const active = (event as CustomEvent<boolean>).detail;
+      if (active) start();
+      else stop();
+    };
+
+    const onVisibility = () => {
+      if (document.visibilityState === 'hidden') stop();
+      else start();
     };
 
     const onResize = () => {
@@ -224,13 +251,17 @@ export function RainField({ playing, flash }: Props) {
     if (reduceMotion) {
       step(false); // one static frame, no loop, no flash animation
     } else {
-      render();
+      start();
+      window.addEventListener('pluvine:appstate', onAppState);
+      document.addEventListener('visibilitychange', onVisibility);
     }
 
     window.addEventListener('resize', onResize);
     return () => {
       window.removeEventListener('resize', onResize);
-      cancelAnimationFrame(animId);
+      window.removeEventListener('pluvine:appstate', onAppState);
+      document.removeEventListener('visibilitychange', onVisibility);
+      stop();
     };
   }, []);
 

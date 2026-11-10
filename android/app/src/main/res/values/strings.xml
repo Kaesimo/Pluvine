@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Pluvine</string>
+    <string name="title_activity_main">Pluvine</string>
+    <string name="package_name">app.pluvine</string>
+    <string name="custom_url_scheme">app.pluvine</string>
+</resources>

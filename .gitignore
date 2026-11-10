@@ -27,3 +27,12 @@ packaging/aur-bin/*.pkg.tar.zst
 # 100 MB limit; everything else needs `npm run sounds:sync`)
 public/sounds/*
 !public/sounds/heavy-thunder.opus
+
+# Capacitor Android build output and generated web assets
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+android/app/src/main/assets/public/
+android/app/src/main/assets/capacitor.config.json
+android/app/src/main/assets/capacitor.plugins.json

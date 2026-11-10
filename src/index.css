@@ -582,3 +582,45 @@
     animation-iteration-count: 1 !important;
   }
 }
+
+/* --- mobile / Android shell -------------------------------------------------
+   The Capacitor WebView is edge-to-edge behind the status bar, so the app
+   honours the system safe areas instead of drawing controls under the notch.
+   Overscroll is disabled: pulling the rain field must never trigger a browser
+   refresh or a rubber-band gap. */
+html,
+body {
+  overscroll-behavior: none;
+}
+
+body {
+  -webkit-tap-highlight-color: transparent;
+  -webkit-touch-callout: none;
+  user-select: none;
+}
+
+input,
+textarea,
+[contenteditable="true"] {
+  user-select: text;
+}
+
+.pl-safe-top {
+  padding-top: max(0.5rem, env(safe-area-inset-top));
+}
+
+.pl-safe-bottom {
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+}
+
+.pl-safe-x {
+  padding-left: max(1rem, env(safe-area-inset-left));
+  padding-right: max(1rem, env(safe-area-inset-right));
+}
+
+@media (min-width: 640px) {
+  .pl-safe-x {
+    padding-left: max(1.25rem, env(safe-area-inset-left));
+    padding-right: max(1.25rem, env(safe-area-inset-right));
+  }
+}
