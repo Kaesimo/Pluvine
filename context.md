@@ -294,6 +294,12 @@ and verify `git log --format='%an <%ae> | %cn <%ce>' -1` after the first new com
 - Build: `npm run android:apk` — builds the web bundle, creates 20-minute 48k
   Opus mobile copies, syncs Capacitor, and runs Gradle. Output:
   `android/app/build/outputs/apk/debug/app-debug.apk`.
+- Toolchain: the JDK and Android SDK live inside the repo at `.android/jdk` and
+  `.android/sdk` (both gitignored; ~950 MB). `scripts/android-gradle.sh` exports
+  `JAVA_HOME`/`ANDROID_HOME` from those folders before calling `gradlew`, so no
+  shell setup is needed. `android/local.properties` points `sdk.dir` at
+  `.android/sdk` (also gitignored). On another machine, either place a
+  toolchain in those folders or set the two env vars yourself.
 - The APK is debug-signed for sideloading; there is no release keystore yet.
 - Mobile audio: rain/wind/AC are 20-minute 48k Opus copies (~151 MB total).
   `distant-thunder.opus` and `heavy-thunder.opus` are copied byte-for-byte.

@@ -28,6 +28,9 @@ packaging/aur-bin/*.pkg.tar.zst
 public/sounds/*
 !public/sounds/heavy-thunder.opus
 
+# Project-local Android toolchain (JDK + SDK) — never committed
+/.android/
+
 # Capacitor Android build output and generated web assets
 android/.gradle/
 android/build/

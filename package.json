@@ -22,8 +22,8 @@
     "transcode:sounds": "node scripts/transcode-sounds.mjs",
     "sounds:mobile": "node scripts/prepare-mobile-sounds.mjs",
     "android:sync": "npm run build && npm run sounds:mobile && npx cap sync android",
-    "android:apk": "npm run android:sync && cd android && ./gradlew assembleDebug",
-    "android:bundle": "npm run android:sync && cd android && ./gradlew bundleRelease",
+    "android:apk": "npm run android:sync && bash scripts/android-gradle.sh assembleDebug",
+    "android:bundle": "npm run android:sync && bash scripts/android-gradle.sh bundleRelease",
     "dist:linux": "VITE_SOUND_EXT=mp3 vite build && node scripts/transcode-sounds.mjs && electron-builder --linux",
     "pack:arch": "VITE_SOUND_EXT=mp3 vite build && node scripts/transcode-sounds.mjs && tar -czf packaging/pluvine-$npm_package_version.tar.gz package.json electron dist build"
   },

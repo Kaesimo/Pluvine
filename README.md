@@ -28,6 +28,8 @@ The Capacitor shell lives in `android/`. Build a debug APK with:
 npm run android:apk
 ```
 
+The build uses a JDK and Android SDK from `.android/jdk` and `.android/sdk`
+when they exist; otherwise set `JAVA_HOME` and `ANDROID_HOME`.
 The APK is written to `android/app/build/outputs/apk/debug/app-debug.apk` and
 is debug-signed for sideloading. A release build needs your own keystore.
 The mobile package uses 20-minute Opus copies of the long rain layers; both
